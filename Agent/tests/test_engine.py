@@ -220,3 +220,17 @@ def test_shipped_example_flow(tmp_path, browser_ok):
     assert res["outputs"] == {"FollowUp": ["A-1003", "A-1004"], "Count": 2}
     assert (work / "report.txt").read_text() == 'Orders to follow up: ["A-1003", "A-1004"]\n'
     assert (work / "orders.png").exists()
+
+
+def test_file_urls_with_spaces_are_allowed(tmp_path, browser_ok):
+    """The default macro folder is "Documents/PMC Macros": file:// URLs arrive as PMC%20Macros."""
+    root = (tmp_path / "PMC Macros").resolve()
+    root.mkdir()
+    (root / "page.html").write_text("<title>Spaced</title><p id=x>ok</p>", encoding="utf-8")
+    p = engine.new_project()
+    p["flows"][0]["tree"] = [step("browser_open", url="page.html"), step("browser_extract", selector="#x", var="X")]
+    res = Engine(Config(roots=[root], audit_log=None), desktop_mod=FakeDesktop()).run(p, outputs=["X"], base_dir=root)
+    assert res["completed"] and res["outputs"] == {"X": "ok"}, res
+    from pmc_mcp.browser import BrowserError, BrowserSession
+    with pytest.raises(BrowserError):
+        BrowserSession(allowed_file_roots=[root])._check_url((tmp_path / "outside.html").as_uri())

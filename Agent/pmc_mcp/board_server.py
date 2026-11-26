@@ -277,6 +277,14 @@ def make_handler(board: Board, token: str):
     return Handler
 
 
+def board_file(cfg: Config, path: str) -> Path:
+    """A .pmc macro or .rflow flow the board can open."""
+    p = cfg.safe_path(path, must_exist=True, suffix=None)
+    if p.suffix.lower() not in (".pmc", engine.SUFFIX):
+        raise ValueError(f"the board opens .pmc macros and {engine.SUFFIX} flows, not {p.name}")
+    return p
+
+
 def serve(cfg: Config, port: int = 0, open_browser: bool = True, file: str | None = None,
           bridge: BridgeClient | None = None, token: str | None = None) -> tuple[ThreadingHTTPServer, str]:
     token = token or secrets.token_urlsafe(24)
@@ -284,7 +292,7 @@ def serve(cfg: Config, port: int = 0, open_browser: bool = True, file: str | Non
     httpd.last_request = time.monotonic()  # type: ignore[attr-defined]
     url = f"http://127.0.0.1:{httpd.server_address[1]}/#t={token}"
     if file:
-        url += "&f=" + str(cfg.safe_path(file, must_exist=True)).replace("&", "%26")
+        url += "&f=" + str(board_file(cfg, file)).replace("&", "%26")
     if open_browser:
         threading.Timer(0.5, webbrowser.open, args=(url,)).start()
     return httpd, url

@@ -511,8 +511,8 @@ def create_server(cfg: Config | None = None, bridge: BridgeClient | None = None)
 
     @tool("readonly", READ, audit=False)
     def board_open(path: str = "", open_browser: bool = True) -> dict:
-        """Open the PMC Visual Board (drag-and-drop flow editor) in the user's browser,
-        optionally on a .pmc file, so they can see or edit a macro visually. Returns its URL."""
+        """Open the Visual Board (drag-and-drop editor) in the user's browser, optionally on a
+        .pmc macro or .rflow flow, so they can see or edit it visually. Returns its URL."""
         from . import board_server
 
         if "httpd" not in board_state:
@@ -521,7 +521,7 @@ def create_server(cfg: Config | None = None, bridge: BridgeClient | None = None)
             board_state.update(httpd=httpd, base=url.split("&f=")[0])
         url = board_state["base"]
         if path:
-            url += "&f=" + str(cfg.safe_path(path, must_exist=True)).replace("&", "%26")
+            url += "&f=" + str(board_server.board_file(cfg, path)).replace("&", "%26")
         if open_browser:
             import webbrowser
 

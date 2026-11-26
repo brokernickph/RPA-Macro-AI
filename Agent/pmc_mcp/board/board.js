@@ -486,6 +486,7 @@ function openRun() {
     if (extra.length) $("runInputs").value = [$("runInputs").value.trim(), ...extra].filter(Boolean).join("\n");
     if (!$("runOutputs").value.trim() && (m.outputs || []).length) $("runOutputs").value = m.outputs.join(", ");
   }
+  $("runTitle").textContent = isFlow() ? `Run flow: ${macro().name}` : `Run macro: ${macro().name}`;
   $("runNote").textContent = isFlow() ? "Runs this flow now: it drives the browser and this computer's mouse and keyboard." : "Runs headless in a separate PMC instance. It really uses this computer's mouse and keyboard.";
   $("runDialog").showModal();
 }

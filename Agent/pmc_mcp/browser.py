@@ -19,6 +19,7 @@ from concurrent.futures import Future
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 _SNAPSHOT_JS = r"""
 (limit) => {
@@ -178,7 +179,8 @@ class BrowserSession:
         if u.scheme in ("http", "https") or url == "about:blank":
             return url
         if u.scheme == "file":
-            p = Path(u.path.lstrip("/") if sys.platform == "win32" else u.path).resolve()
+            # url2pathname decodes %20 etc. and maps /C:/x to C:\x on Windows
+            p = Path(url2pathname(u.path)).resolve()
             if any(p == r or r in p.parents for r in self.allowed_file_roots):
                 return url
             raise BrowserError("file:// URLs are only allowed inside the macro directories")

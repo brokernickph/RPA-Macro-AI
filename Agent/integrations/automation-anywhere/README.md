@@ -1,7 +1,7 @@
 # Running PMC macros from Automation Anywhere
 
-Automation Anywhere (Automation 360) bots can run PMC macros as a step: pass input variables in
-and read output variables back. This uses the generic `pmc-run` command line, so the same approach
+Automation Anywhere (Automation 360) bots can run PMC macros (`.pmc`) and browser + desktop flows
+(`.rflow`) as a step: pass input variables in and read output variables back. This uses the generic `pmc-run` command line, so the same approach
 works from Power Automate Desktop, Blue Prism, Windows Task Scheduler or any script.
 
 > **Status:** `pmc-run` and `run_json` are covered by automated tests. The Automation Anywhere
@@ -32,7 +32,7 @@ works from Power Automate Desktop, Blue Prism, Windows Task Scheduler or any scr
    - *Arguments:* one string variable containing a JSON request, for example:
 
      ```json
-     {"path": "C:\\Macros\\invoice.pmc", "macro": "Export",
+     {"path": "C:\\Macros\\invoice.rflow", "macro": "Main",
       "inputs": {"InvoiceNo": "INV-42"}, "outputs": ["ExportPath"], "timeout_s": 300}
      ```
 

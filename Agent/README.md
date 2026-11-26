@@ -1,28 +1,79 @@
-# PMC Agent Bridge and MCP Server
+# RPA Macro AI
 
-This turns Pulover's Macro Creator into an **RPA engine that AI agents can drive** through the
-[Model Context Protocol](https://modelcontextprotocol.io). Any MCP client (Claude Desktop,
-Claude Code, Cursor, custom agents built on an MCP SDK, …) can:
+Agentic **browser + desktop** automation built on Pulover's Macro Creator (PMC). It has three layers
+that share one set of files and tools:
 
-* **build** macros as `.pmc` projects that open, edit and play normally in the PMC GUI,
-* **run** a macro headless with **input variables** and get **output variables** back,
-* **drive the live PMC app**: open, play, stop, and **record a human demonstration** and read it back,
-* **observe and act on the desktop directly**: screenshots, window list, click, type, keys,
-  image and pixel search.
+| Layer | What it does | Files |
+|---|---|---|
+| **Desktop macros** | PMC records and plays Windows mouse/keyboard macros. They run headless with input and output variables, and AI agents can drive the live app (including recording a demonstration). | `.pmc` |
+| **Browser** | Playwright automation of Edge or Chrome: open, click, fill, select, wait, read text and whole tables, screenshots. Logins persist with `PMC_BROWSER_PROFILE`. | – |
+| **Flows** | Repeatable automations that mix browser steps, desktop steps and PMC macros, with variables, If/Else, Repeat and **For each** (e.g. for each row of a scraped table). | `.rflow` |
+
+You can use it four ways:
+
+* **AI agents** (Claude Desktop, Claude Code, Cursor, any MCP client) through the `pmc-mcp` MCP
+  server: they observe the screen and pages, build flows and macros, run them and check the results.
+* **The Visual Board**: a drag-and-drop editor for flows and macros (`pmc-board`, or
+  File → Visual Board… in PMC).
+* **The command line** for schedulers and other RPA tools: `pmc-run invoice.rflow --input Limit=100`.
+* **Other RPA platforms**: UiPath, Robomotion and Automation Anywhere (see below).
 
 ```
- AI agent ──MCP (stdio)──► pmc-mcp (Python)
-                              │
-                              ├─ .pmc files ───────────── read/write (pure Python, lossless)
-                              ├─ MacroCreator -new -s<n> ─ headless run, inputs/outputs injected
-                              ├─ WM_COPYDATA "PMCA" ─────► LIB\AgentBridge.ahk inside the running PMC
-                              │                            (play / stop / record / open / save / status)
-                              └─ AutoHotkey v1 snippets ── desktop primitives (click, keys, windows, search)
+ AI agent ──MCP──► pmc-mcp ─┬─ browser_*  ──────────► Playwright ─► Edge / Chrome
+ Visual Board ─HTTP─┐       ├─ flow_* / engine ─────► runs .rflow: browser + desktop + PMC macros
+ pmc-run ───────────┴──────►├─ desktop_* ───────────► AutoHotkey v1 snippets (click, keys, windows, image search)
+                            ├─ macro_* / macro_run ─► .pmc files; MacroCreator -new -s<n> (headless, inputs/outputs)
+                            └─ pmc_* ───────────────► LIB\AgentBridge.ahk inside the running PMC (play / stop / record)
 ```
+
+## Flows (`.rflow`)
+
+A flow is a list of steps. Text parameters can use `{{expressions}}` such as `{{Row.Customer}}`.
+Conditions use a small, safe expression language (`Total > 100 and Status = "Paid"`,
+`len(Rows) > 0`), with no `eval`. This is the shipped example,
+[`examples/order-followup`](examples/order-followup/order-followup.rflow), in the compact form agents
+write:
+
+```json
+[
+  {"kind": "browser_open", "url": "orders.html"},
+  {"kind": "browser_select", "selector": "#status", "value": "open"},
+  {"kind": "browser_table", "selector": "#orders", "var": "Rows"},
+  {"kind": "assign", "var": "FollowUp", "value": "[]", "expression": true},
+  {"kind": "foreach", "items": "Rows", "item": "Row", "steps": [
+    {"kind": "if", "condition": "Row.Status = \"open\" and Row.Total > Limit", "then": [
+      {"kind": "assign", "var": "FollowUp", "value": "FollowUp + [Row.Order]", "expression": true},
+      {"kind": "log", "message": "Follow up {{Row.Order}} for {{Row.Customer}}"}]}]},
+  {"kind": "file_append", "text": "Orders to follow up: {{FollowUp}}\n", "path": "report.txt"},
+  {"kind": "type_text", "text": "Follow up: {{FollowUp}}", "window": "ahk_exe notepad.exe"}
+]
+```
+
+```bash
+pmc-run examples/order-followup/order-followup.rflow --input Limit=100 --output FollowUp
+```
+
+This returns `{"completed": true, "outputs": {"FollowUp": ["A-1003", "A-1004"]}, "log": [...]}`. A
+failing step is reported by its position, e.g. `step 6[3].1.1 (browser_click): ...`.
+
+**Step kinds:**
+- **Browser:** `browser_open`, `browser_click`, `browser_fill`, `browser_select`, `browser_press`,
+  `browser_wait`, `browser_extract`, `browser_table`, `browser_screenshot`, `browser_close`.
+- **Desktop (Windows):** `click`, `mouse_move`, `type_text`, `send_keys`, `run`, `win_wait`,
+  `win_activate`, `win_close`, `msgbox`, `command`.
+- **PMC:** `run_macro`, which runs a `.pmc` macro with inputs; its outputs become flow variables.
+- **Data and control:** `assign`, `log`, `file_append`, `sleep`, `comment`, `break`, plus the blocks
+  `if` / `elif` / `else`, `loop` and `foreach`.
+
+Call the MCP tool `flow_step_kinds` for every parameter. Relative paths resolve next to the flow
+file.
+
+![A flow on the Visual Board](docs/screenshots/07-flow-overview.png)
 
 ## Visual Board
 
-A drag-and-drop flow editor for PMC macros that runs in your browser:
+A drag-and-drop editor for flows (`.rflow`) and PMC macros (`.pmc`) that runs in your browser. The
+palette adapts to the file: flows get the Browser group, For each, Run PMC macro and Log.
 
 * **Build visually:** drag actions (click, type, keys, open app, wait for window, if/else, repeat,
   variables…) from the palette onto the **+** slots, then fill in the settings panel. If/Else-if/Else
@@ -37,7 +88,10 @@ A drag-and-drop flow editor for PMC macros that runs in your browser:
   `board_open` tool.
 * Undo/redo, Ctrl+S, Delete, Ctrl+D (duplicate), zoom, multiple macros as tabs, dark mode.
 
-![Visual Board](docs/screenshots/01-board-overview.png)
+| | |
+|---|---|
+| ![For each over a scraped table](docs/screenshots/08-flow-foreach.png) | ![Run with inputs, outputs and step log](docs/screenshots/09-flow-run-result.png) |
+| ![PMC macro on the board](docs/screenshots/01-board-overview.png) | ![Dark mode](docs/screenshots/10-flow-dark.png) |
 
 Open it from PMC with **File → Visual Board…**, or from a terminal:
 
@@ -55,12 +109,16 @@ web pages can't drive it. It exits on its own about two minutes after you close 
 | **UiPath** | A coded MCP server for Orchestrator, built with UiPath's `uipath-mcp` SDK. `uipath init` and `uipath pack` were verified. | [`integrations/uipath`](integrations/uipath/README.md) |
 | **Robomotion** | An entry for the `robomotion-mcps` catalog, so Teams agents can switch PMC on. It passes the catalog's `validate.sh`. | [`integrations/robomotion`](integrations/robomotion/README.md) |
 | **Automation Anywhere** | Bots call `pmc-run` or the `run_json` Python function to run a macro with inputs and outputs. | [`integrations/automation-anywhere`](integrations/automation-anywhere/README.md) |
-| Anything else | `pmc-run file.pmc --input K=V --output X [--result-file r.json]` prints JSON. Exit codes: 0 completed, 2 incomplete, 3 timed out, 1 error. | – |
+| Anything else | `pmc-run file.rflow\|file.pmc --input K=V --output X [--result-file r.json]` prints JSON. Exit codes: 0 completed, 2 incomplete, 3 timed out, 1 error. | – |
+
+All of them get everything here, browser automation and flows included: the MCP integrations expose
+every tool, and `pmc-run` / `run_json` run `.rflow` flows as well as `.pmc` macros.
 
 ## Install (Windows)
 
 1. Python 3.10+ and, for the desktop tools, **AutoHotkey v1.1** (<https://www.autohotkey.com>).
-   The AHK v2 installer can install v1 side by side; the server finds both layouts.
+   The AHK v2 installer can install v1 side by side; the server finds both layouts. Browser steps use
+   the Microsoft Edge that comes with Windows, so nothing else needs downloading.
 2. From this folder:
 
    ```bash
@@ -99,15 +157,19 @@ web pages can't drive it. It exits on its own about two minutes after you close 
 | `PMC_MCP_ROOTS` | `~/Documents/PMC Macros` | `;`-separated folders the agent may read and write `.pmc` files and images in. Relative paths resolve to the first |
 | `PMC_MCP_LEVEL` | `standard` | `readonly` · `standard` · `full` (see below) |
 | `PMC_MCP_AUDIT_LOG` | `<first root>/pmc-mcp-audit.jsonl` | JSON-lines log of every state-changing tool call |
-| `PMC_MCP_TIMEOUT` | `300` | Default seconds before a running macro is stopped |
+| `PMC_MCP_TIMEOUT` | `300` | Default seconds before a running macro or flow is stopped |
+| `PMC_BROWSER_CHANNEL` | `msedge` on Windows | Browser to drive: `msedge` or `chrome` (both are already installed browsers, so nothing is downloaded) |
+| `PMC_BROWSER_PROFILE` | – | Folder for a persistent browser profile, so logins and cookies survive between runs |
+| `PMC_BROWSER_HEADLESS` | `0` on Windows | `1` runs the browser without a window |
+| `PMC_BROWSER_EXECUTABLE` | – | Explicit Chrome/Chromium path (overrides the channel) |
 
 ### Permission levels
 
 | Level | Allows |
 |---|---|
-| `readonly` | reading macros, PMC status, screenshots, window list, pixel/image search |
-| `standard` | everything above, plus editing macros, running/playing/recording them, mouse/keyboard/window actions |
-| `full` | everything above, plus `desktop_run_ahk` (arbitrary AutoHotkey scripts) |
+| `readonly` | reading macros and flows, PMC status, screenshots, window list, pixel/image search, reading the open web page |
+| `standard` | everything above, plus editing and running macros and flows, recording, mouse/keyboard/window actions, browsing |
+| `full` | everything above, plus `desktop_run_ahk` (arbitrary AutoHotkey) and `browser_evaluate` (arbitrary page JavaScript) |
 
 > **Be clear about the risk:** a macro can contain any command, including `Run`. At `standard`, an
 > agent can effectively control this computer as you. Use a dedicated Windows account or VM for
@@ -124,7 +186,9 @@ web pages can't drive it. It exits on its own about two minutes after you close 
 | Live PMC | `pmc_launch`, `pmc_status`, `pmc_open`, `pmc_save`, `pmc_window` | control the app |
 | | `pmc_play`, `pmc_stop` | play (optionally waiting) / abort |
 | | `pmc_record_start`, `pmc_record_stop`, `pmc_get_live_macro` | capture a human demonstration as steps |
-| Board | `board_open` | open the Visual Board on a file, so the user can see or edit a macro |
+| Browser | `browser_open`, `browser_snapshot` (interactive elements with refs), `browser_click`, `browser_fill`, `browser_press`, `browser_select`, `browser_wait`, `browser_extract`, `browser_table`, `browser_screenshot`, `browser_close`; `browser_evaluate` (`full` only) | drive web pages live |
+| Flows | `flow_step_kinds`, `flow_create`, `flow_read`, `flow_update`, `flow_run`, `flow_stop` | build, run and fix `.rflow` automations |
+| Board | `board_open` | open the Visual Board on a macro or flow, so the user can see or edit it |
 | Desktop | `desktop_screenshot`, `desktop_list_windows`, `desktop_window` | observe and manage windows |
 | | `desktop_click`, `desktop_send_keys`, `desktop_pixel_color`, `desktop_image_search` | act and verify |
 | | `desktop_run_ahk` | arbitrary AHK v1 (`full` only) |
@@ -189,13 +253,24 @@ pip install -e .[test]
 pytest
 ```
 
-The tests run on any OS. They cover lossless round trips of every bundled example `.pmc` (as rows
-and as board trees), that every step the board shows as a form rebuilds to the identical row, the
-step builders, path confinement and permission levels, the board's HTTP API and security checks,
-and the MCP tools end to end over an in-process client against a simulated bridge and a fake PMC
-executable. `tests/test_board_ui.py` drives the real board in Chromium via Playwright (skipped when
-Playwright isn't installed; set `PMC_TEST_CHROMIUM` to use an existing Chrome binary).
+The tests (152) run on any OS. They cover:
 
-**Not yet verified on Windows:** `LIB/AgentBridge.ahk`, the File → Visual Board menu item, the
-Win32 message sending, and the AHK snippets behind the `desktop_*` tools were written against the PMC source but still need a test
-pass on a real Windows machine.
+- lossless round trips of every bundled `.pmc` example, as rows and as board trees, and that every
+  step the board shows as a form rebuilds to the identical row;
+- the flow engine: expressions (including blocked escapes such as `__import__`), templates,
+  if/elif/else, loops, for-each, break, timeouts, stop, path confinement, and the shipped example
+  flow in a real browser;
+- the browser engine and the live `browser_*` MCP tools in real Chromium;
+- the MCP tools end to end over an in-process client, against a simulated PMC bridge, a fake PMC
+  executable and a fake desktop;
+- the board's HTTP API and its security checks, plus Chromium UI tests that build and run a flow
+  from the palette.
+
+Tests that need a browser are skipped when Playwright or Chromium isn't available. Set
+`PMC_TEST_CHROMIUM` to use an existing Chrome binary.
+
+**Not yet verified on Windows:** `LIB/AgentBridge.ahk`, the File → Visual Board menu item, the Win32
+message sending, the AutoHotkey snippets behind the desktop steps and `desktop_*` tools, and the
+Edge channel (`PMC_BROWSER_CHANNEL=msedge`). They were written against PMC's source and the
+AutoHotkey and Playwright APIs, but still need a test pass on a real Windows machine. The browser
+engine itself is tested in Chromium.

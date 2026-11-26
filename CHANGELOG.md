@@ -12,6 +12,11 @@ install the `Agent/` package.
 
 ### Highlights
 
+- **RPA Macro AI: browser + desktop in one tool.** Playwright browser automation, a flow engine
+  (`.rflow`) that mixes browser steps, desktop steps and PMC macros with variables and loops, and
+  the same flows on the Visual Board, from the command line, for AI agents over MCP and on
+  UiPath, Robomotion and Automation Anywhere.
+
 - **AI agents can use PMC as an RPA engine** through the Model Context Protocol (MCP), from
   Claude Desktop, Claude Code or any other MCP client.
 - **Visual Board:** a drag-and-drop flow editor for PMC macros that runs in the browser.
@@ -21,6 +26,52 @@ install the `Agent/` package.
   back the recorded steps.
 
 ![Visual Board overview](Agent/docs/screenshots/01-board-overview.png)
+
+### Added: browser automation and flows
+
+![A flow on the Visual Board](Agent/docs/screenshots/07-flow-overview.png)
+
+- **Browser engine** (`pmc_mcp/browser.py`):
+  - Playwright on a dedicated thread, using Edge on Windows by default, or Chrome or any Chromium.
+  - Open, list interactive elements with refs for agents, click, fill, press, select, wait, read
+    text or attributes, read whole tables as row records, and take screenshots.
+  - `PMC_BROWSER_PROFILE` keeps logins between runs.
+  - `file://` pages are only allowed inside the macro folders.
+- **Flow engine** (`pmc_mcp/engine.py`) for `.rflow` files:
+  - Mixes browser steps, desktop steps (AutoHotkey) and `run_macro` (a PMC macro with inputs, whose
+    outputs become flow variables).
+  - Variables, `{{templates}}`, If / Else if / Else, Repeat, **For each**, Break and Log.
+  - Timeouts and stop.
+  - A step log, and errors that name the failing step (`step 6[3].1.1 (browser_click): …`).
+  - Conditions use a small, safe expression language with no `eval`, accepting PMC habits such
+    as `=` for equality.
+  - Relative paths resolve next to the flow.
+- **MCP tools for agents:**
+  - Browser: `browser_open`, `browser_snapshot`, `browser_click`, `browser_fill`, `browser_press`,
+    `browser_select`, `browser_wait`, `browser_extract`, `browser_table`, `browser_screenshot`,
+    `browser_close`, and `browser_evaluate` at level `full`.
+  - Flows: `flow_step_kinds`, `flow_create`, `flow_read`, `flow_update`, `flow_run`, `flow_stop`.
+  - Agents write flows in a compact nested form, which converts to and from the board format
+    losslessly.
+- **Visual Board** edits and runs flows:
+  - The palette adapts to the file (a Browser group, For each, Run PMC macro, Log).
+  - Flow inputs and outputs, editing For each and Else if, and running with inputs while seeing
+    outputs and the step log.
+  - **New** creates a flow by default.
+- `pmc-run` and `run_json` run `.rflow` flows as well as `.pmc` macros, so UiPath, Robomotion and
+  Automation Anywhere get flows and browser automation too.
+- **Example:** `Agent/examples/order-followup`, a sample orders page and a flow that filters it,
+  reads the table, picks big open orders, writes a report and takes a screenshot. Its Notepad steps
+  are off by default.
+- Desktop primitives moved into the shared `pmc_mcp/desktop.py`, used by both the MCP tools and
+  the engine.
+- **Fixed:** `file://` pages in folders with spaces, such as the default `Documents\PMC Macros`,
+  were refused. `pmc-board` and `board_open` couldn't open `.rflow` files directly.
+
+| | |
+|---|---|
+| ![For each](Agent/docs/screenshots/08-flow-foreach.png) | ![Run result](Agent/docs/screenshots/09-flow-run-result.png) |
+| For each over a scraped table, with an If inside | Running a flow: outputs and step log |
 
 ### Added: inside Pulover's Macro Creator
 
@@ -113,9 +164,11 @@ install the `Agent/` package.
 
 ### Tests
 
-119 automated tests (`cd Agent && pip install -e .[test] && pytest`), runnable on any OS:
+152 automated tests (`cd Agent && pip install -e .[test] && pytest`), runnable on any OS:
 
 - `.pmc` round trips and block-tree round trips for every bundled example.
+- The flow engine (expressions, blocked escapes, blocks, timeouts, stop) and the browser engine in
+  real Chromium, including the shipped example flow and the live `browser_*` MCP tools.
 - Every step the board shows as a form rebuilds to the identical row.
 - MCP tools end to end, against a simulated agent bridge and a fake PMC executable (including the
   timeout kill).
@@ -125,7 +178,8 @@ install the `Agent/` package.
 ### Known limitations
 
 - **Not yet run on Windows:** `LIB/AgentBridge.ahk`, the File → Visual Board menu item, the Win32
-  messaging, and the AutoHotkey snippets behind the `desktop_*` tools. They were written against
+  messaging, the AutoHotkey snippets behind the desktop steps and `desktop_*` tools, and the Edge
+  browser channel. Browser automation itself is tested in Chromium. They were written against
   PMC's source and AutoHotkey v1.1 semantics, but this work was built in a Linux environment.
 - The board is a structured flow (sequence, branches, loops), not a free-form node graph. That
   keeps every board flow a valid PMC macro.

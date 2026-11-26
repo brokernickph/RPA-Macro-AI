@@ -118,3 +118,19 @@ def test_cli_idle_exit_and_file_folder_allowed(tmp_path):
     line = p.stdout.readline()
     assert "PMC Visual Board: http://127.0.0.1:" in line and "Demo.pmc" in line  # opened despite being outside roots
     assert p.wait(timeout=20) == 0  # exits on its own once idle
+
+
+def test_board_opens_flow_files(tmp_path):
+    from pmc_mcp import engine
+
+    root = (tmp_path / "m").resolve()
+    root.mkdir()
+    engine.dump(engine.new_project("F"), root / "f.rflow")
+    (root / "notes.txt").write_text("x")
+    cfg = Config(roots=[root], audit_log=None)
+    httpd, url = board_server.serve(cfg, open_browser=False, file=str(root / "f.rflow"), token=TOKEN,
+                                    bridge=BridgeClient(directory=tmp_path / "nb", sender=lambda h, p: False))
+    assert url.endswith("f.rflow")
+    httpd.server_close()
+    with pytest.raises(ValueError):
+        board_server.serve(cfg, open_browser=False, file=str(root / "notes.txt"))
