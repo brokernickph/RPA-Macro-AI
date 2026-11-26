@@ -10,11 +10,8 @@ Tool groups
 from __future__ import annotations
 
 import functools
-import io
-import os
 import threading
 import time
-from pathlib import Path
 from typing import Any, Callable
 
 import anyio
@@ -30,7 +27,7 @@ try:
 except ImportError:
     from mcp.types import ToolAnnotations  # type: ignore[no-redef]
 
-from . import pmcfile, runner
+from . import desktop, pmcfile, runner
 from . import steps as stepkit
 from .bridge import BridgeClient, BridgeError
 from .config import Config
@@ -310,166 +307,43 @@ def create_server(cfg: Config | None = None, bridge: BridgeClient | None = None)
         The image may be downscaled; the returned 'scale' maps image pixels to screen pixels:
         screen_x = origin_x + image_x * scale.
         """
-        try:
-            from PIL import ImageGrab
-        except ImportError:
-            raise RuntimeError("desktop_screenshot needs Pillow: pip install pillow") from None
-        bbox = None
-        if window:
-            r = runner.run_ahk(cfg, f"""
-                t := {runner.ahk_string(window)}
-                WinGetPos, x, y, w, h, %t%
-                if (w = "")
-                    _out("{{}}")
-                else
-                    _out("{{""x"":" x ",""y"":" y ",""w"":" w ",""h"":" h "}}")
-            """)
-            if not r:
-                raise LookupError(f"window not found: {window}")
-            bbox = (r["x"], r["y"], r["x"] + r["w"], r["y"] + r["h"])
-        elif width and height:
-            bbox = (x, y, x + width, y + height)
-        img = ImageGrab.grab(bbox=bbox, all_screens=True)
-        scale = 1.0
-        if max_width and img.width > max_width:
-            scale = img.width / max_width
-            img = img.resize((max_width, round(img.height / scale)))
-        buf = io.BytesIO()
-        img.save(buf, format="PNG", optimize=True)
-        origin = (bbox[0], bbox[1]) if bbox else ("virtual-screen origin (0,0 on single-monitor setups)")
-        return [
-            Image(data=buf.getvalue(), format="png"),
-            f"origin={origin} scale={scale:.4f} size={img.width}x{img.height}",
-        ]
+        png, meta = desktop.screenshot_png(cfg, window, (x, y, width, height) if width and height else None, max_width)
+        return [Image(data=png, format="png"), f"origin={meta['origin']} scale={meta['scale']:.4f} size={meta['size']}"]
 
     @tool("readonly", READ, audit=False)
     def desktop_list_windows() -> dict:
         """Visible top-level windows with id, title, class, process, position and state."""
-        return runner.run_ahk(cfg, r"""
-            WinGet, ids, List
-            s := ""
-            Loop, %ids%
-            {
-                id := ids%A_Index%
-                WinGetTitle, t, ahk_id %id%
-                if (t = "")
-                    continue
-                WinGetClass, c, ahk_id %id%
-                WinGet, exe, ProcessName, ahk_id %id%
-                WinGet, mm, MinMax, ahk_id %id%
-                WinGetPos, x, y, w, h, ahk_id %id%
-                s .= (s = "" ? "" : ",") "{""id"":" (id + 0) ",""title"":" _q(t) ",""class"":" _q(c)
-                    . ",""process"":" _q(exe) ",""state"":" mm ",""x"":" x ",""y"":" y ",""w"":" w ",""h"":" h "}"
-            }
-            WinGet, active, ID, A
-            _out("{""active"":" (active + 0) ",""windows"":[" s "]}")
-        """)
+        return desktop.list_windows(cfg)
 
     @tool("standard", ACT)
     def desktop_window(window: str, action: str, x: int = 0, y: int = 0, width: int = 0, height: int = 0, timeout_s: int = 5) -> dict:
         """Act on a window: activate | minimize | maximize | restore | close | move | wait.
         window: title substring, "ahk_exe app.exe", "ahk_class X" or "ahk_id <id>"."""
-        cmds = {
-            "activate": "WinActivate, %t%\nWinWaitActive, %t%,, " + str(timeout_s),
-            "minimize": "WinMinimize, %t%",
-            "maximize": "WinMaximize, %t%",
-            "restore": "WinRestore, %t%",
-            "close": "WinClose, %t%,, " + str(timeout_s),
-            "move": f"WinMove, %t%,, {x}, {y}, {width or ''}, {height or ''}",
-            "wait": "WinWait, %t%,, " + str(timeout_s),
-        }
-        if action not in cmds:
-            raise ValueError(f"action must be one of {sorted(cmds)}")
-        return runner.run_ahk(cfg, f"""
-            t := {runner.ahk_string(window)}
-            IfWinNotExist, %t%
-            {{
-                if ("{action}" != "wait")
-                {{
-                    _out("{{""ok"":false,""error"":""window not found""}}")
-                    ExitApp
-                }}
-            }}
-            {cmds[action]}
-            _out("{{""ok"":" (ErrorLevel ? "false" : "true") "}}")
-        """, timeout=timeout_s + 10)
+        return desktop.window_action(cfg, window, action, x, y, width, height, timeout_s)
 
     @tool("standard", ACT)
     def desktop_click(x: int, y: int, button: str = "Left", count: int = 1, relative_to: str = "screen", window: str = "") -> dict:
         """Click at coordinates. relative_to: screen | window | client (window/client need `window`,
         which is activated first)."""
-        modes = {"screen": "Screen", "window": "Window", "client": "Client"}
-        if relative_to.lower() not in modes:
-            raise ValueError(f"relative_to must be one of {sorted(modes)}")
-        mode = modes[relative_to.lower()]
-        b = stepkit._button(button)
-        activate = ""
-        if window:
-            activate = f"t := {runner.ahk_string(window)}\nWinActivate, %t%\nWinWaitActive, %t%,, 3\n"
-        elif mode != "Screen":
-            raise ValueError("relative_to window/client requires window")
-        return runner.run_ahk(cfg, f"""
-            {activate}
-            CoordMode, Mouse, {mode}
-            Click, {int(x)}, {int(y)}, {b}, {int(count)}
-            _out("{{""ok"":true}}")
-        """)
+        return desktop.click(cfg, x, y, button, count, relative_to, window)
 
     @tool("standard", ACT)
     def desktop_send_keys(keys: str = "", text: str = "", window: str = "") -> dict:
         """Send keystrokes (AHK syntax in `keys`, e.g. "^s", "{Enter}", "!{F4}") and/or literal `text`.
         If window is given it is activated first."""
-        if not keys and not text:
-            raise ValueError("give keys and/or text")
-        body = ""
-        if window:
-            body += f"t := {runner.ahk_string(window)}\nWinActivate, %t%\nWinWaitActive, %t%,, 3\nif ErrorLevel\n{{\n_out(\"{{\"\"ok\"\":false,\"\"error\"\":\"\"window not active\"\"}}\")\nExitApp\n}}\n"
-        if text:
-            body += f"_txt := {runner.ahk_string(text)}\nSendInput, {{Text}}%_txt%\n"
-        if keys:
-            body += f"_k := {runner.ahk_string(keys)}\nSendInput, %_k%\n"
-        body += '_out("{""ok"":true}")'
-        return runner.run_ahk(cfg, body)
+        return desktop.send(cfg, keys, text, window)
 
     @tool("readonly", READ, audit=False)
     def desktop_pixel_color(x: int, y: int) -> dict:
         """RGB colour (0xRRGGBB) of a screen pixel."""
-        return runner.run_ahk(cfg, f"""
-            CoordMode, Pixel, Screen
-            PixelGetColor, c, {int(x)}, {int(y)}, RGB
-            _out("{{""color"":" _q(c) "}}")
-        """)
+        return desktop.pixel_color(cfg, x, y)
 
     @tool("readonly", READ, audit=False)
     def desktop_image_search(image_path: str, x1: int = 0, y1: int = 0, x2: int = 0, y2: int = 0, variation: int = 30, center: bool = True) -> dict:
         """Find an image (PNG/BMP) on screen. Region defaults to the whole virtual screen.
         Returns screen coordinates (top-left, or center if center=true)."""
         img = cfg.safe_path(image_path, must_exist=True, suffix=None)
-        region = (
-            f"x1 := {int(x1)}, y1 := {int(y1)}, x2 := {int(x2)}, y2 := {int(y2)}"
-            if (x2 and y2)
-            else "SysGet, x1, 76\nSysGet, y1, 77\nSysGet, vw, 78\nSysGet, vh, 79\nx2 := x1 + vw, y2 := y1 + vh"
-        )
-        return runner.run_ahk(cfg, f"""
-            CoordMode, Pixel, Screen
-            {region}
-            f := {runner.ahk_string(str(img))}
-            ImageSearch, fx, fy, %x1%, %y1%, %x2%, %y2%, *{int(variation)} %f%
-            if (ErrorLevel = 2)
-                _out("{{""found"":false,""error"":""could not search (bad image file?)""}}")
-            else if (ErrorLevel = 1)
-                _out("{{""found"":false}}")
-            else
-            {{
-                if ({1 if center else 0})
-                {{
-                    Gui, Add, Picture, hwndh, %f%
-                    GuiControlGet, _p, Pos, %h%
-                    fx += _pW // 2, fy += _pH // 2
-                }}
-                _out("{{""found"":true,""x"":" fx ",""y"":" fy "}}")
-            }}
-        """)
+        return desktop.image_search(cfg, str(img), x1, y1, x2, y2, variation, center)
 
     # ======================================================================
     # Visual board
