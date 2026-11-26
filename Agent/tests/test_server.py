@@ -160,7 +160,7 @@ def test_status_when_not_running(env, tmp_path):
 
 
 def test_screenshot_returns_image_and_scale(env, monkeypatch):
-    PIL = pytest.importorskip("PIL")
+    pytest.importorskip("PIL")
     from PIL import Image as PILImage, ImageGrab
 
     monkeypatch.setattr(ImageGrab, "grab", lambda bbox=None, all_screens=False: PILImage.new("RGB", (3200, 1800), "white"))

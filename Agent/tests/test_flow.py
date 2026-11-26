@@ -74,10 +74,15 @@ def test_describe_keeps_variable_references():
     assert flow.describe(literal.to_dict()) is None  # kept raw so the literal % survives
 
 
-def test_palette_kinds_are_buildable():
+def test_palette_kinds_are_runnable():
+    """Each palette action works where the board offers it: as a PMC row (.pmc) and/or in the flow engine (.rflow)."""
+    from pmc_mcp import engine
+
     for g in flow.PALETTE:
         for k in g["kinds"]:
-            if k.get("block"):
-                continue
+            scope = k.get("scope", "both")
             spec = {"kind": k["kind"], **{f["name"]: f["default"] for f in k["fields"]}}
-            steps.build(spec)
+            if scope in ("both", "pmc") and not k.get("block"):
+                steps.build(spec)  # valid PMC row
+            if scope in ("both", "flow"):
+                assert k["kind"] in engine.KINDS or k["kind"] in ("if", "loop", "foreach"), k["kind"]

@@ -3,7 +3,7 @@
   --accent: #3d6cf0; --accent-ink: #ffffff; --accent-soft: #e6ecfe;
   --danger: #d6455d; --ok: #1f9d6a; --warn: #c78a14;
   --node: #ffffff; --node-border: #d3d8e3; --shadow: 0 1px 2px rgba(20,30,60,.08), 0 2px 8px rgba(20,30,60,.06);
-  --g-mouse: #3d6cf0; --g-keyboard: #8a4df0; --g-apps: #e07a1f; --g-flow: #1f9d6a; --g-data: #c2408f; --g-advanced: #5b6577;
+  --g-browser: #0e8f8f; --g-mouse: #3d6cf0; --g-keyboard: #8a4df0; --g-apps: #e07a1f; --g-flow: #1f9d6a; --g-data: #c2408f; --g-advanced: #5b6577;
   --radius: 10px;
   color-scheme: light;
 }

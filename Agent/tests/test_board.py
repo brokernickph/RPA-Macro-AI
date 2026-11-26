@@ -56,7 +56,7 @@ def test_security(board):
 def test_static_served(board):
     base, _, _ = board
     with urllib.request.urlopen(base + "/") as r:
-        assert b"PMC Visual Board" in r.read()
+        assert b"RPA Macro AI" in r.read()
     with urllib.request.urlopen(base + "/board.js") as r:
         assert "javascript" in r.headers["Content-Type"]
 

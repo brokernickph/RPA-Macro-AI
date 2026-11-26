@@ -497,7 +497,9 @@ class Engine:
     # ---- PMC macros ------------------------------------------------------------
     def _k_run_macro(self, path="", macro="", inputs=None, outputs=None, timeout_s=0):
         p = self.cfg.safe_path(str(path), must_exist=True)
-        ins = {k: render(v, self.vars) for k, v in (inputs or {}).items()} if isinstance(inputs, dict) else {}
+        if isinstance(inputs, str):  # "Name=value" lines, as typed in the board
+            inputs = dict(line.split("=", 1) for line in inputs.splitlines() if "=" in line)
+        ins = {k.strip(): render(v, self.vars) for k, v in (inputs or {}).items()} if isinstance(inputs, dict) else {}
         outs = outputs if isinstance(outputs, list) else [o.strip() for o in str(outputs or "").split(",") if o.strip()]
         remaining = max(1.0, self.deadline - time.monotonic())
         res = self.macro_runner(self.cfg, p, macro or None, ins, outs, min(remaining, float(timeout_s or remaining)))

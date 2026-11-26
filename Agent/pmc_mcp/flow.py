@@ -232,6 +232,30 @@ def _f(name, label, type_="text", **kw):
 
 
 PALETTE: list[dict] = [
+    {"group": "Browser", "kinds": [
+        {"kind": "browser_open", "label": "Open web page", "icon": "globe", "scope": "flow", "fields": [
+            _f("url", "URL", default="https://example.com")]},
+        {"kind": "browser_click", "label": "Click element", "icon": "cursor", "scope": "flow", "fields": [
+            _f("selector", "Element (CSS, text=..., role=...)", default="text=Sign in")]},
+        {"kind": "browser_fill", "label": "Fill field", "icon": "text", "scope": "flow", "fields": [
+            _f("selector", "Field", default="#search"), _f("text", "Text", default=""),
+            _f("submit", "Press Enter afterwards", "checkbox", default=False)]},
+        {"kind": "browser_select", "label": "Choose option", "icon": "list", "scope": "flow", "fields": [
+            _f("selector", "Drop-down", default="select"), _f("value", "Option value or label", default="")]},
+        {"kind": "browser_press", "label": "Press key (web)", "icon": "key", "scope": "flow", "fields": [
+            _f("key", "Key (Enter, Tab, Control+A)", default="Enter"), _f("selector", "On element (optional)", default="")]},
+        {"kind": "browser_wait", "label": "Wait for element", "icon": "hourglass", "scope": "flow", "fields": [
+            _f("selector", "Element", default=""), _f("text", "…or text", default=""),
+            _f("timeout_s", "Timeout (s)", "number", default=15), _f("var", "Save found=true/false in (optional)", default="")]},
+        {"kind": "browser_extract", "label": "Get text", "icon": "var", "scope": "flow", "fields": [
+            _f("selector", "Element", default="h1"), _f("var", "Save in variable", default="Text"),
+            _f("attribute", "Attribute (optional, e.g. href)", default=""), _f("all", "All matches (list)", "checkbox", default=False)]},
+        {"kind": "browser_table", "label": "Read table", "icon": "table", "scope": "flow", "fields": [
+            _f("selector", "Table", default="table"), _f("var", "Save rows in", default="Rows")]},
+        {"kind": "browser_screenshot", "label": "Page screenshot", "icon": "camera", "scope": "flow", "fields": [
+            _f("path", "Save as (.png)", default="page.png")]},
+        {"kind": "browser_close", "label": "Close browser", "icon": "close", "scope": "flow", "fields": []},
+    ]},
     {"group": "Mouse", "kinds": [
         {"kind": "click", "label": "Click", "icon": "cursor", "fields": [
             _f("x", "X", "number", default=0), _f("y", "Y", "number", default=0),
@@ -265,7 +289,13 @@ PALETTE: list[dict] = [
         {"kind": "loop", "label": "Repeat", "icon": "loop", "block": True, "fields": [
             _f("count", "Times (0 = until Break)", "number", default=3)]},
         {"kind": "break", "label": "Break loop", "icon": "stop", "fields": []},
-        {"kind": "gosub", "label": "Run another macro", "icon": "call", "fields": [_f("label", "Macro name", default="")]},
+        {"kind": "foreach", "label": "For each", "icon": "loop", "block": True, "scope": "flow", "fields": [
+            _f("items", "List (expression, e.g. Rows)", default="Rows"), _f("item", "Each item is called", default="Row")]},
+        {"kind": "gosub", "label": "Run another macro", "icon": "call", "scope": "pmc", "fields": [_f("label", "Macro name", default="")]},
+        {"kind": "run_macro", "label": "Run PMC macro", "icon": "call", "scope": "flow", "fields": [
+            _f("path", "Macro file (.pmc)", default="my-macro.pmc"), _f("macro", "Macro name (optional)", default=""),
+            _f("inputs", "Inputs (one per line: Name={{Variable}})", "kv", default={}),
+            _f("outputs", "Outputs to keep (comma separated)", "list", default=[])]},
     ]},
     {"group": "Data", "kinds": [
         {"kind": "assign", "label": "Set variable", "icon": "var", "fields": [
@@ -275,6 +305,7 @@ PALETTE: list[dict] = [
             _f("text", "Message", "textarea", default="Done!"), _f("title", "Title (optional)", default="")]},
         {"kind": "file_append", "label": "Append to file", "icon": "file", "fields": [
             _f("text", "Text", default=""), _f("path", "File path", default="")]},
+        {"kind": "log", "label": "Log", "icon": "note", "scope": "flow", "fields": [_f("message", "Message", default="Row {{index}} done")]},
         {"kind": "comment", "label": "Note", "icon": "note", "fields": [_f("text", "Note", "textarea", default="")]},
     ]},
     {"group": "Advanced", "kinds": [

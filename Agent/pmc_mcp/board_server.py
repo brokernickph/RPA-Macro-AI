@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from . import flow, pmcfile, runner
+from . import engine, flow, pmcfile, runner
 from .bridge import BridgeClient
 from .config import Config
 
@@ -44,16 +44,33 @@ class Board:
         self._lock = threading.Lock()
 
     # ---- files -------------------------------------------------------------
+    @staticmethod
+    def _is_flow(p: Path) -> bool:
+        return p.suffix.lower() == engine.SUFFIX
+
+    def _path(self, path: str, must_exist: bool = False) -> Path:
+        p = self.cfg.safe_path(path, must_exist=must_exist, suffix=None)
+        if p.suffix.lower() not in (".pmc", engine.SUFFIX):
+            raise ApiError(HTTPStatus.BAD_REQUEST, f"expected a .pmc macro or an {engine.SUFFIX} flow: {p.name}")
+        return p
+
     def files(self) -> dict:
         out = []
         for root in self.cfg.roots:
             if root.is_dir():
-                for p in sorted(root.rglob("*.pmc")):
-                    out.append({"path": str(p), "name": str(p.relative_to(root)), "mtime": p.stat().st_mtime})
+                found = sorted([*root.rglob("*.pmc"), *root.rglob("*" + engine.SUFFIX)], key=lambda q: str(q).lower())
+                for p in found:
+                    out.append({"path": str(p), "name": str(p.relative_to(root)), "mtime": p.stat().st_mtime,
+                                "type": "rflow" if self._is_flow(p) else "pmc"})
         return {"roots": [str(r) for r in self.cfg.roots], "files": out}
 
     def project(self, path: str) -> dict:
-        p = self.cfg.safe_path(path, must_exist=True)
+        p = self._path(path, must_exist=True)
+        if self._is_flow(p):
+            proj = engine.load(p)
+            flows = [{"index": i, "name": f["name"], "inputs": f["inputs"], "outputs": f["outputs"],
+                      "structured": True, "tree": f["tree"]} for i, f in enumerate(proj["flows"], 1)]
+            return {"path": str(p), "type": "rflow", "mtime": p.stat().st_mtime, "name": proj.get("name"), "macros": flows}
         proj = pmcfile.load(p)
         macros = []
         for i, m in enumerate(proj.macros, 1):
@@ -61,50 +78,78 @@ class Board:
             _annotate(tree)
             macros.append({"index": i, "name": m.name, "hotkey": m.hotkey, "repeat": m.repeat,
                            "is_function": m.is_function, "structured": structured, "tree": tree})
-        return {"path": str(p), "mtime": p.stat().st_mtime, "macros": macros}
+        return {"path": str(p), "type": "pmc", "mtime": p.stat().st_mtime, "macros": macros}
+
+    def _check_conflict(self, p: Path, body: dict) -> None:
+        if body.get("create"):
+            raise ApiError(HTTPStatus.CONFLICT, f"{p.name} already exists")
+        mtime = body.get("mtime")
+        if mtime is not None and abs(p.stat().st_mtime - float(mtime)) > 1e-3 and not body.get("force"):
+            raise ApiError(HTTPStatus.CONFLICT, "the file changed on disk since you opened it (PMC or an agent edited it); reload first")
 
     def save(self, body: dict) -> dict:
         self.cfg.require("standard")
-        p = self.cfg.safe_path(body.get("path", ""))
+        p = self._path(body.get("path", ""))
+        if not body.get("macros"):
+            raise ApiError(HTTPStatus.BAD_REQUEST, "a project needs at least one macro or flow")
         with self._lock:
             if p.exists():
-                if body.get("create"):
-                    raise ApiError(HTTPStatus.CONFLICT, f"{p.name} already exists")
-                old = pmcfile.load(p)
-                mtime = body.get("mtime")
-                if mtime is not None and abs(p.stat().st_mtime - float(mtime)) > 1e-3 and not body.get("force"):
-                    raise ApiError(HTTPStatus.CONFLICT, "the file changed on disk since you opened it (PMC or an agent edited it); reload first")
-            else:
-                old = pmcfile.Project()
-            new = pmcfile.Project(globals_line=old.globals_line)
-            for spec in body.get("macros") or []:
-                idx = spec.get("index")
-                base = old.macros[idx - 1] if isinstance(idx, int) and 1 <= idx <= len(old.macros) else None
-                m = base if base is not None else pmcfile.Macro(groups="", context=None)
-                m.name = str(spec.get("name") or m.name)
-                m.hotkey = str(spec.get("hotkey", m.hotkey) or "")
-                m.repeat = str(spec.get("repeat", m.repeat) or "1")
-                try:
-                    m.steps = flow.to_rows(spec.get("tree") or [])
-                except (ValueError, TypeError) as e:
-                    raise ApiError(HTTPStatus.BAD_REQUEST, f"macro {m.name}: {e}") from None
-                new.macros.append(m)
-            if not new.macros:
-                raise ApiError(HTTPStatus.BAD_REQUEST, "a project needs at least one macro")
+                self._check_conflict(p, body)
             p.parent.mkdir(parents=True, exist_ok=True)
-            pmcfile.dump(new, p)
-        self.cfg.audit("board_save", path=str(p), macros=len(new.macros))
+            if self._is_flow(p):
+                old = engine.load(p) if p.exists() else engine.new_project(p.stem)
+                flows = []
+                for spec in body["macros"]:
+                    tree = spec.get("tree") or []
+                    try:
+                        engine.steps_to_tree(engine.tree_to_steps(tree))  # validates every kind
+                    except engine.FlowError as e:
+                        raise ApiError(HTTPStatus.BAD_REQUEST, f"flow {spec.get('name')}: {e}") from None
+                    flows.append({"name": str(spec.get("name") or f"Flow{len(flows) + 1}"),
+                                  "inputs": [str(x) for x in spec.get("inputs") or []],
+                                  "outputs": [str(x) for x in spec.get("outputs") or []], "tree": tree})
+                engine.dump({**old, "name": body.get("name") or old.get("name") or p.stem, "flows": flows}, p)
+            else:
+                old = pmcfile.load(p) if p.exists() else pmcfile.Project()
+                new = pmcfile.Project(globals_line=old.globals_line)
+                for spec in body["macros"]:
+                    idx = spec.get("index")
+                    base = old.macros[idx - 1] if isinstance(idx, int) and 1 <= idx <= len(old.macros) else None
+                    m = base if base is not None else pmcfile.Macro(groups="", context=None)
+                    m.name = str(spec.get("name") or m.name)
+                    m.hotkey = str(spec.get("hotkey", m.hotkey) or "")
+                    m.repeat = str(spec.get("repeat", m.repeat) or "1")
+                    try:
+                        m.steps = flow.to_rows(spec.get("tree") or [])
+                    except (ValueError, TypeError) as e:
+                        raise ApiError(HTTPStatus.BAD_REQUEST, f"macro {m.name}: {e}") from None
+                    new.macros.append(m)
+                pmcfile.dump(new, p)
+        self.cfg.audit("board_save", path=str(p), items=len(body["macros"]))
         return self.project(str(p))
 
     # ---- run ---------------------------------------------------------------
     def run(self, body: dict) -> dict:
         self.cfg.require("standard")
-        p = self.cfg.safe_path(body.get("path", ""), must_exist=True)
+        p = self._path(body.get("path", ""), must_exist=True)
         self.cfg.audit("board_run", path=str(p), macro=body.get("macro"))
-        return runner.run_macro_headless(
-            self.cfg, p, body.get("macro") or None, body.get("inputs") or {}, body.get("outputs") or [],
-            float(body.get("timeout_s") or self.cfg.default_timeout),
-        )
+        timeout = float(body.get("timeout_s") or self.cfg.default_timeout)
+        if self._is_flow(p):
+            eng = engine.Engine(self.cfg)
+            self._engine = eng
+            try:
+                return eng.run(engine.load(p), body.get("macro") or None, body.get("inputs") or {},
+                               body.get("outputs") or None, timeout)
+            finally:
+                self._engine = None
+        return runner.run_macro_headless(self.cfg, p, body.get("macro") or None, body.get("inputs") or {},
+                                         body.get("outputs") or [], timeout)
+
+    def stop_flow(self) -> dict:
+        eng = getattr(self, "_engine", None)
+        if eng:
+            eng.stop()
+        return {"stopping": bool(eng)}
 
     def pmc(self, action: str, body: dict) -> Any:
         if action == "status":
@@ -194,6 +239,8 @@ def make_handler(board: Board, token: str):
                     res = board.save(body)
                 elif method == "POST" and route == "run":
                     res = board.run(body)
+                elif method == "POST" and route == "flow/stop":
+                    res = board.stop_flow()
                 elif route.startswith("pmc/"):
                     res = board.pmc(route[4:], body)
                 else:

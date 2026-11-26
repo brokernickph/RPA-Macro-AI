@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PMC Visual Board</title>
+<title>RPA Macro AI Board</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="board.css">
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="logo" aria-hidden="true">▚</span> PMC Board</div>
+  <div class="brand"><span class="logo" aria-hidden="true">▚</span> RPA Macro AI</div>
   <div class="filebox">
     <select id="fileSelect" title="Macro project"></select>
     <button id="newFile" class="ghost" title="New project">New</button>
@@ -47,7 +47,7 @@
 <dialog id="runDialog">
   <form method="dialog" class="runform">
     <h3>Run macro</h3>
-    <p class="muted">Runs headless in a separate PMC instance. It really uses this computer's mouse and keyboard.</p>
+    <p class="muted" id="runNote">Runs headless in a separate PMC instance. It really uses this computer's mouse and keyboard.</p>
     <label>Input variables <span class="muted">(one per line: Name=value)</span>
       <textarea id="runInputs" rows="4" placeholder="UserName=alice"></textarea></label>
     <label>Output variables <span class="muted">(comma separated)</span>

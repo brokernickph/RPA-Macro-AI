@@ -3,14 +3,16 @@
 
 const S = {
   token: "", palette: [], kinds: {}, level: "standard",
-  files: [], path: "", mtime: null, macros: [], cur: 0,
+  files: [], path: "", ftype: "pmc", mtime: null, macros: [], cur: 0,
   sel: null, pendingSlot: null, dirty: false, undo: [], redo: [], zoom: 1,
   byId: new Map(), nextId: 1, saving: false,
 };
 
-const GROUP_COLOR = { "Mouse": "--g-mouse", "Keyboard": "--g-keyboard", "Apps & windows": "--g-apps", "Flow": "--g-flow", "Data": "--g-data", "Advanced": "--g-advanced" };
+const GROUP_COLOR = { "Browser": "--g-browser", "Mouse": "--g-mouse", "Keyboard": "--g-keyboard", "Apps & windows": "--g-apps", "Flow": "--g-flow", "Data": "--g-data", "Advanced": "--g-advanced" };
 const ICONS = { cursor: "↖", move: "✥", text: "T", key: "⌘", app: "▣", hourglass: "⧗", window: "❐", close: "✕", clock: "◷",
-  branch: "⑂", loop: "↻", stop: "■", call: "↪", var: "x", message: "✉", file: "≡", note: "✎", code: "{}" };
+  branch: "⑂", loop: "↻", stop: "■", call: "↪", var: "x", message: "✉", file: "≡", note: "✎", code: "{}",
+  globe: "◍", list: "☰", table: "▦", camera: "◉" };
+const isFlow = () => S.ftype === "rflow";
 
 // ---------------------------------------------------------------- utilities
 const $ = (id) => document.getElementById(id);
@@ -78,6 +80,7 @@ function summary(node) {
   }
   if (node.t === "loop") {
     const h = node.head;
+    if (h && h.kind === "foreach") return { title: "For each", sub: `${h.item || "item"} in ${h.items || "?"}` };
     if (!h || h.kind || h.type === "Loop") { const c = headVal(h, "count", "repeat"); return { title: "Repeat", sub: !c || c === "0" ? "until Break" : `${c} times` }; }
     return { title: `Loop (${h.type})`, sub: h.details };
   }
@@ -93,6 +96,11 @@ function summary(node) {
     sleep: () => `${v.ms} ms`, assign: () => `${v.var} = ${v.value}`, msgbox: () => v.text,
     file_append: () => v.path, comment: () => v.text, command: () => `${v.name} ${v.params || ""}`,
     gosub: () => v.label, break: () => "",
+    browser_open: () => v.url, browser_click: () => v.selector, browser_fill: () => `${v.selector} ← "${v.text}"`,
+    browser_select: () => `${v.selector} = ${v.value}`, browser_press: () => v.key, browser_wait: () => v.selector || v.text,
+    browser_extract: () => `${v.selector} → ${v.var}`, browser_table: () => `${v.selector} → ${v.var}`,
+    browser_screenshot: () => v.path, browser_close: () => "", log: () => v.message,
+    run_macro: () => `${v.path}${v.macro ? " › " + v.macro : ""}` + (v.outputs && v.outputs.length ? ` → ${[].concat(v.outputs).join(", ")}` : ""),
   }[v.kind];
   return { title: label, sub: sub ? sub() : "" };
 }
@@ -103,6 +111,7 @@ function newNode(kind) {
   for (const f of def?.fields || []) params[f.name] = f.default;
   if (kind === "if") return { t: "if", branches: [{ head: { kind: "if", condition: params.condition }, body: [] }], else: { head: null, body: [] }, end: null };
   if (kind === "loop") return { t: "loop", head: { kind: "loop", count: params.count }, body: [], end: null };
+  if (kind === "foreach") return { t: "loop", head: { kind: "foreach", items: params.items, item: params.item }, body: [], end: null };
   const spec = { kind, ...params };
   return { t: "step", spec, view: spec };
 }
@@ -275,6 +284,18 @@ function field(f, value, onchange) {
   let input;
   if (f.type === "select") input = el("select", { id, onchange: (e) => onchange(e.target.value) }, (f.options || []).map((o) => el("option", { value: o, selected: o === value, text: o })));
   else if (f.type === "textarea") input = el("textarea", { id, rows: 3, oninput: (e) => onchange(e.target.value) });
+  else if (f.type === "kv") { // {Name: value} edited as "Name=value" lines
+    input = el("textarea", { id, rows: 3, placeholder: "Name={{Variable}}", oninput: (e) => {
+      const o = {}; for (const line of e.target.value.split("\n")) { const i = line.indexOf("="); if (i > 0) o[line.slice(0, i).trim()] = line.slice(i + 1); }
+      onchange(o);
+    } });
+    input.value = Object.entries(value || {}).map(([k, v]) => `${k}=${v}`).join("\n");
+    return el("label", { for: id }, f.label, input);
+  } else if (f.type === "list") {
+    input = el("input", { id, type: "text", oninput: (e) => onchange(e.target.value.split(",").map((x) => x.trim()).filter(Boolean)) });
+    input.value = [].concat(value || []).join(", ");
+    return el("label", { for: id }, f.label, input);
+  }
   else input = el("input", { id, type: f.type === "number" ? "number" : "text", oninput: (e) => onchange(f.type === "number" ? Number(e.target.value) : e.target.value) });
   if (f.type !== "select") input.value = value ?? "";
   return el("label", { for: id }, f.label, input);
@@ -294,6 +315,15 @@ function edited() { // coalesce keystrokes into one undo step and redraw the car
 function renderInspector() {
   const ins = $("inspector");
   const s = S.sel && S.byId.get(S.sel);
+  if ((!s || !s.node) && isFlow() && macro()) {
+    const m = macro();
+    ins.replaceChildren(el("h3", { text: `Flow: ${m.name}` }),
+      el("div", { class: "kindline", text: "Variables this flow takes in and hands back. Use them in steps as {{Name}}." }),
+      field({ name: "flowInputs", label: "Inputs (comma separated)", type: "list" }, m.inputs, (v) => { m.inputs = v; edited(); }),
+      field({ name: "flowOutputs", label: "Outputs (comma separated)", type: "list" }, m.outputs, (v) => { m.outputs = v; edited(); }),
+      el("p", { class: "muted", text: "Select a step to edit it. Browser steps use selectors such as #id, .class, text=Sign in or role=button[name=\"Save\"]. Conditions: Total > 100 and Status = \"Paid\"." }));
+    return;
+  }
   if (!s || !s.node) {
     ins.replaceChildren(el("div", { class: "empty" }, "Select a step to edit it.", el("br"), el("br"),
       "Drag actions from the left onto a ", el("b", { text: "+" }), " slot, or click an action to add it after the selected step (or inside a selected Repeat / If)."));
@@ -328,17 +358,23 @@ function renderInspector() {
       parts.push(row);
     });
     parts.push(el("div", { class: "row" },
-      el("button", { text: "+ Else if", onclick: () => { checkpoint(); n.branches.push({ head: { action: "[ElseIf] Compare Variables", details: "true", type: "If_Statement", repeat: "1", delay: "0" }, body: [] }); render(); } })),
+      el("button", { text: "+ Else if", onclick: () => { checkpoint(); n.branches.push({ head: isFlow() ? { kind: "if", condition: "true" } : { action: "[ElseIf] Compare Variables", details: "true", type: "If_Statement", repeat: "1", delay: "0" }, body: [] }); render(); } })),
     field({ name: "hasElse", label: "Has an Else branch", type: "checkbox" }, !!n.else, (val) => {
       checkpoint();
       if (val && !n.else) n.else = { head: null, body: [] };
       else if (!val && n.else) { if (n.else.body.length && !confirm("Delete the Else branch and its steps?")) return render(); n.else = null; }
       render();
     }));
-    parts.push(el("p", { class: "muted", text: "Conditions are AutoHotkey expressions, e.g. ErrorLevel = 0, Count > 3, InStr(Title, \"Invoice\")." }));
+    parts.push(el("p", { class: "muted", text: isFlow()
+      ? "Conditions: Total > 100 and Status = \"Paid\", len(Rows) > 0, Name.lower().startswith(\"inv\")."
+      : "Conditions are AutoHotkey expressions, e.g. ErrorLevel = 0, Count > 3, InStr(Title, \"Invoice\")." }));
   } else if (n.t === "loop") {
     const h = n.head;
-    if (!h || h.kind || h.type === "Loop") {
+    if (h && h.kind === "foreach") {
+      parts.push(field({ name: "items", label: "List (expression, e.g. Rows)", type: "text" }, h.items, (val) => { h.items = val; edited(); }));
+      parts.push(field({ name: "item", label: "Each item is called", type: "text" }, h.item, (val) => { h.item = val; edited(); }));
+      parts.push(el("p", { class: "muted", text: "Inside the loop use {{Row.Column}} for a table row, and {{index}} for the 1-based position." }));
+    } else if (!h || h.kind || h.type === "Loop") {
       parts.push(field({ name: "count", label: "Times (0 = until Break)", type: "number" }, headVal(h, "count", "repeat"), (val) => {
         if (h.kind) h.count = val; else h.repeat = String(val); edited();
       }));
@@ -364,8 +400,10 @@ function renderPalette() {
   const p = $("palette");
   p.replaceChildren();
   for (const g of S.palette) {
+    const kinds = g.kinds.filter((k) => (k.scope || "both") === "both" || k.scope === (isFlow() ? "flow" : "pmc"));
+    if (!kinds.length) continue;
     p.append(el("h4", { text: g.group }));
-    for (const k of g.kinds) {
+    for (const k of kinds) {
       p.append(el("div", {
         class: "tile", draggable: "true", title: "Drag onto a + slot, or click to add",
         ondragstart: (e) => e.dataTransfer.setData("text/pmc-kind", k.kind),
@@ -381,13 +419,15 @@ async function loadFiles() {
   S.files = r.files;
   const sel = $("fileSelect");
   sel.replaceChildren(...(S.files.length ? [] : [el("option", { value: "", text: "No projects yet" })]),
-    ...S.files.map((f) => el("option", { value: f.path, selected: f.path === S.path, text: f.name })));
+    ...S.files.map((f) => el("option", { value: f.path, selected: f.path === S.path, text: (f.type === "rflow" ? "⚡ " : "▤ ") + f.name })));
   return r;
 }
 async function open(path, keepTab = false) {
   const r = await api("GET", "project?path=" + encodeURIComponent(path));
   const cur = keepTab ? S.cur : 0;
-  S.path = r.path; S.mtime = r.mtime; S.macros = r.macros;
+  const typeChanged = S.ftype !== (r.type || "pmc");
+  S.path = r.path; S.ftype = r.type || "pmc"; S.mtime = r.mtime; S.macros = r.macros;
+  if (typeChanged) renderPalette();
   S.cur = Math.min(cur, S.macros.length - 1); S.sel = null; S.undo = []; S.redo = []; S.pendingSlot = null;
   setDirty(false); $("banner").hidden = true;
   $("fileSelect").value = S.path;
@@ -400,7 +440,8 @@ async function save() {
   if (!S.path) return toast("Create or open a project first", true);
   S.saving = true;
   try {
-    const body = { path: S.path, mtime: S.mtime, macros: S.macros.map((m) => ({ index: m.index, name: m.name, hotkey: m.hotkey, repeat: m.repeat, tree: strip(m.tree) })) };
+    const body = { path: S.path, mtime: S.mtime, macros: S.macros.map((m) => ({ index: m.index, name: m.name, hotkey: m.hotkey, repeat: m.repeat,
+      inputs: m.inputs, outputs: m.outputs, tree: strip(m.tree) })) };
     const r = await api("PUT", "project", body);
     const cur = S.cur;
     S.mtime = r.mtime; S.macros = r.macros; S.cur = Math.min(cur, S.macros.length - 1); S.sel = null;
@@ -415,20 +456,21 @@ async function save() {
 }
 async function forceSave() { S.mtime = null; await save(); }
 async function newFile() {
-  let name = prompt("New project name", "My automation");
+  let name = prompt("New automation name.\nA flow (browser + desktop) is created; end the name with .pmc for a classic PMC macro.", "My automation");
   if (!name) return;
   name = name.trim().replace(/[\\/:*?"<>|]/g, "_");
-  if (!name.toLowerCase().endsWith(".pmc")) name += ".pmc";
+  const pmc = name.toLowerCase().endsWith(".pmc");
+  if (!pmc && !name.toLowerCase().endsWith(".rflow")) name += ".rflow";
   try {
-    const r = await api("PUT", "project", { path: name, create: true, macros: [{ name: "Macro1", tree: [] }] });
+    const r = await api("PUT", "project", { path: name, create: true, macros: [pmc ? { name: "Macro1", tree: [] } : { name: "Main", inputs: [], outputs: [], tree: [] }] });
     await loadFiles(); await open(r.path);
   } catch (e) { toast(e.message, true); }
 }
 function addMacro() {
-  const name = prompt("Macro name", `Macro${S.macros.length + 1}`);
+  const name = prompt(isFlow() ? "Flow name" : "Macro name", `${isFlow() ? "Flow" : "Macro"}${S.macros.length + 1}`);
   if (!name) return;
   checkpoint();
-  S.macros.push({ index: null, name: name.trim(), hotkey: "", repeat: "1", structured: true, tree: [] });
+  S.macros.push({ index: null, name: name.trim(), hotkey: "", repeat: "1", structured: true, inputs: [], outputs: [], tree: [] });
   S.cur = S.macros.length - 1; S.sel = null; render();
 }
 
@@ -437,6 +479,14 @@ async function ensureSaved() { return !S.dirty || (await save()); }
 function openRun() {
   if (!macro()) return;
   $("runResult").hidden = true;
+  if (isFlow()) {
+    const m = macro();
+    const have = new Set($("runInputs").value.split("\n").map((l) => l.split("=")[0].trim()).filter(Boolean));
+    const extra = (m.inputs || []).filter((n) => !have.has(n)).map((n) => `${n}=`);
+    if (extra.length) $("runInputs").value = [$("runInputs").value.trim(), ...extra].filter(Boolean).join("\n");
+    if (!$("runOutputs").value.trim() && (m.outputs || []).length) $("runOutputs").value = m.outputs.join(", ");
+  }
+  $("runNote").textContent = isFlow() ? "Runs this flow now: it drives the browser and this computer's mouse and keyboard." : "Runs headless in a separate PMC instance. It really uses this computer's mouse and keyboard.";
   $("runDialog").showModal();
 }
 async function runNow(e) {
@@ -453,9 +503,11 @@ async function runNow(e) {
   $("runGo").disabled = true;
   try {
     const r = await api("POST", "run", { path: S.path, macro: S.cur + 1, inputs, outputs, timeout_s: Number($("runTimeout").value) || 120 });
-    out.textContent = (r.completed ? "✓ Completed" : r.timed_out ? "⏱ Timed out (stopped)" : "✗ Did not reach the last step") + ` in ${r.seconds}s\n` +
-      (Object.keys(r.outputs || {}).length ? "\nOutputs:\n" + Object.entries(r.outputs).map(([k, v]) => `  ${k} = ${v ?? "(not set)"}`).join("\n") : "") +
-      (r.note ? `\n\n${r.note}` : "");
+    const fmt = (v) => (v === null || v === undefined ? "(not set)" : typeof v === "object" ? JSON.stringify(v) : String(v));
+    out.textContent = (r.completed ? "✓ Completed" : r.timed_out ? "⏱ Timed out (stopped)" : "✗ " + (r.error || "Did not reach the last step")) + ` in ${r.seconds}s\n` +
+      (Object.keys(r.outputs || {}).length ? "\nOutputs:\n" + Object.entries(r.outputs).map(([k, v]) => `  ${k} = ${fmt(v)}`).join("\n") : "") +
+      (r.note ? `\n\n${r.note}` : "") +
+      (r.log && r.log.length ? "\n\nSteps:\n" + r.log.slice(-25).map((l) => `  ${l.ok ? "✓" : "✗"} ${l.step.padEnd(8)} ${l.kind}${l.note ? "  " + l.note : ""}`).join("\n") : "");
   } catch (err) { out.textContent = "Error: " + err.message; }
   finally { $("runGo").disabled = false; }
 }
@@ -467,7 +519,10 @@ async function play() {
     toast("Playing in PMC");
   } catch (e) { toast(e.message, true); }
 }
-async function stop() { try { await api("POST", "pmc/stop", {}); toast("Stopped"); } catch (e) { toast(e.message, true); } }
+async function stop() {
+  try { await api("POST", "flow/stop", {}); } catch { /* ignore */ }
+  try { if (!$("pmcStatus").textContent.includes("offline")) await api("POST", "pmc/stop", {}); toast("Stopped"); } catch (e) { toast(e.message, true); }
+}
 
 // ---------------------------------------------------------------- polling
 async function poll() {
@@ -476,7 +531,7 @@ async function poll() {
     const p = $("pmcStatus");
     p.className = "pill" + (st.running ? (st.playing || st.recording ? " busy" : " on") : "");
     p.textContent = !st.running ? "PMC: offline" : st.playing ? "PMC: playing" : st.recording ? "PMC: recording" : "PMC: ready";
-    $("play").disabled = !st.running; $("stop").disabled = !st.running;
+    $("play").disabled = !st.running || isFlow(); $("stop").disabled = !st.running && !isFlow();
   } catch { /* server gone */ }
   if (S.path && !S.saving) {
     try {
