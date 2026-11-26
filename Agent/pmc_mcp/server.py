@@ -12,6 +12,7 @@ from __future__ import annotations
 import functools
 import io
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -469,6 +470,31 @@ def create_server(cfg: Config | None = None, bridge: BridgeClient | None = None)
                 _out("{{""found"":true,""x"":" fx ",""y"":" fy "}}")
             }}
         """)
+
+    # ======================================================================
+    # Visual board
+    # ======================================================================
+
+    board_state: dict[str, Any] = {}
+
+    @tool("readonly", READ, audit=False)
+    def board_open(path: str = "", open_browser: bool = True) -> dict:
+        """Open the PMC Visual Board (drag-and-drop flow editor) in the user's browser,
+        optionally on a .pmc file, so they can see or edit a macro visually. Returns its URL."""
+        from . import board_server
+
+        if "httpd" not in board_state:
+            httpd, url = board_server.serve(cfg, open_browser=False, bridge=bridge)
+            threading.Thread(target=httpd.serve_forever, daemon=True).start()
+            board_state.update(httpd=httpd, base=url.split("&f=")[0])
+        url = board_state["base"]
+        if path:
+            url += "&f=" + str(cfg.safe_path(path, must_exist=True)).replace("&", "%26")
+        if open_browser:
+            import webbrowser
+
+            webbrowser.open(url)
+        return {"url": url, "note": "local only (127.0.0.1); the link contains an access token, do not share it"}
 
     @tool("full", ACT)
     def desktop_run_ahk(script: str, timeout_s: int = 30) -> dict:

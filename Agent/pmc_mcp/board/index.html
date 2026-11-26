@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PMC Visual Board</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="board.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo" aria-hidden="true">▚</span> PMC Board</div>
+  <div class="filebox">
+    <select id="fileSelect" title="Macro project"></select>
+    <button id="newFile" class="ghost" title="New project">New</button>
+  </div>
+  <nav id="tabs" class="tabs" aria-label="Macros"></nav>
+  <div class="spacer"></div>
+  <span id="dirty" class="dirty" hidden>Unsaved</span>
+  <span id="pmcStatus" class="pill" title="Pulover's Macro Creator">PMC: offline</span>
+  <button id="undo" class="ghost icon" title="Undo (Ctrl+Z)">↶</button>
+  <button id="redo" class="ghost icon" title="Redo (Ctrl+Y)">↷</button>
+  <button id="save" title="Save (Ctrl+S)">Save</button>
+  <button id="run" class="primary" title="Run this macro headless">▶ Run</button>
+  <button id="play" class="ghost" title="Play in the open PMC window">Play in PMC</button>
+  <button id="stop" class="danger" title="Stop playback">■ Stop</button>
+</header>
+
+<main class="layout">
+  <aside class="palette" id="palette" aria-label="Actions"></aside>
+
+  <section class="canvas-wrap" id="canvasWrap">
+    <div id="banner" class="banner" hidden></div>
+    <div class="zoom">
+      <button class="ghost icon" id="zoomOut" title="Zoom out">−</button>
+      <span id="zoomLabel">100%</span>
+      <button class="ghost icon" id="zoomIn" title="Zoom in">+</button>
+    </div>
+    <div class="canvas" id="canvas"></div>
+  </section>
+
+  <aside class="inspector" id="inspector" aria-label="Step settings">
+    <div class="empty">Select a step to edit it.<br><br>Drag actions from the left onto a <b>+</b> slot, or click an action to add it after the selected step.</div>
+  </aside>
+</main>
+
+<dialog id="runDialog">
+  <form method="dialog" class="runform">
+    <h3>Run macro</h3>
+    <p class="muted">Runs headless in a separate PMC instance. It really uses this computer's mouse and keyboard.</p>
+    <label>Input variables <span class="muted">(one per line: Name=value)</span>
+      <textarea id="runInputs" rows="4" placeholder="UserName=alice"></textarea></label>
+    <label>Output variables <span class="muted">(comma separated)</span>
+      <input id="runOutputs" placeholder="OrderId, Status"></label>
+    <label>Timeout (seconds) <input id="runTimeout" type="number" value="120" min="1"></label>
+    <pre id="runResult" class="result" hidden></pre>
+    <div class="actions">
+      <button value="cancel" class="ghost">Close</button>
+      <button id="runGo" value="default" class="primary">▶ Run now</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="board.js"></script>
+</body>
+</html>

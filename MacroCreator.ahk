@@ -14590,6 +14590,30 @@ Loop, 12
 }
 return
 
+VisualBoard:
+; Opens the drag-and-drop flow editor (Agent\pmc_mcp\board) on the current project.
+Gui, 1:+OwnDialogs
+Gui, 1:Submit, NoHide
+GoSub, SaveData
+If ((CurrentFileName = "") || (SavePrompt))
+{
+	MsgBox, 33, Visual Board, The Visual Board edits the saved .pmc file.`n`nSave the project now?
+	IfMsgBox, Cancel
+		return
+	GoSub, Save
+	If ((CurrentFileName = "") || (SavePrompt))
+		return
+}
+If (!AgentBridgeOn) ; lets the board's "Play in PMC" button drive this window
+{
+	AgentBridgeOn := 1
+	AgentBridge_Start()
+}
+Run, pmc-board "%CurrentFileName%",, Hide UseErrorLevel
+If (ErrorLevel)
+	MsgBox, 48, Visual Board, Could not start "pmc-board".`n`nInstall it once with Python 3.10+:`n    pip install "%A_ScriptDir%\Agent"`n`nSee Agent\README.md for details.
+return
+
 ListVars:
 SavedVars(, UserVars)
 FilteredVars := ""
@@ -15572,6 +15596,7 @@ Menu, FileMenu, Add, %f_Lang006%`t%_s%Ctrl+E, Export
 Menu, FileMenu, Add, %f_Lang007%`t%_s%Ctrl+P, Preview
 Menu, FileMenu, Add, %f_Lang008%`t%_s%Ctrl+Shift+E, EditScript
 Menu, FileMenu, Add, %f_Lang009%`t%_s%Ctrl+Alt+T, Scheduler
+Menu, FileMenu, Add, Visual Board..., VisualBoard
 Menu, FileMenu, Add
 Menu, FileMenu, Add, %f_Lang010%`t%_s%Alt+F3, ListVars
 Menu, FileMenu, Add

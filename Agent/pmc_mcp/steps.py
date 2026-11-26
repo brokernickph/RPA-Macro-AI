@@ -29,11 +29,12 @@ def _int(v: Any, name: str) -> int:
         raise ValueError(f"{name} must be an integer, got {v!r}") from None
 
 
-def send_keys(keys: str, delay: int = 10, control: str = "", window: str = "") -> Step:
-    """AHK Send syntax, e.g. "^c", "{Enter}", "{Ctrl Down}a{Ctrl Up}"."""
+def send_keys(keys: str, delay: int = 10, control: str = "", window: str = "", label: str = "") -> Step:
+    """AHK Send syntax, e.g. "^c", "{Enter}", "{Ctrl Down}a{Ctrl Up}". label = name shown in PMC."""
+    action = label or keys
     if control or window:
-        return Step(action=keys, details=keys, delay=str(delay), type="ControlSend", target=control, window=window)
-    return Step(action=keys, details=keys, delay=str(delay), type="Send")
+        return Step(action=action, details=keys, delay=str(delay), type="ControlSend", target=control, window=window)
+    return Step(action=action, details=keys, delay=str(delay), type="Send")
 
 
 def type_text(text: str, control: str = "", window: str = "", set_text: bool = False) -> Step:
@@ -88,15 +89,16 @@ def win_close(window: str) -> Step:
     return _win("WinClose", window)
 
 
-def assign(var: str, value: str, expression: bool = False) -> Step:
+def assign(var: str, value: str, expression: bool = False, literal: bool = False) -> Step:
+    """Set a variable. Text values may use %OtherVar%; literal=True keeps % as-is."""
     check_var_name(var)
     if expression:
         return Step(action="[Assign Variable]", details=f"{var} := {value}", type="Variable", target="Expression")
-    return Step(action="[Assign Variable]", details=f"{var} := {escape_text(value)}", type="Variable")
+    return Step(action="[Assign Variable]", details=f"{var} := {escape_text(value, literal_percent=literal)}", type="Variable")
 
 
-def msgbox(text: str, options: int = 0) -> Step:
-    return Step(action="[MsgBox]", details=escape_text(text), type="MsgBox", target=str(_int(options, "options")))
+def msgbox(text: str, options: int = 0, title: str = "") -> Step:
+    return Step(action="[MsgBox]", details=escape_text(text), type="MsgBox", target=str(_int(options, "options")), window=title)
 
 
 def if_expr(condition: str) -> Step:
@@ -166,16 +168,16 @@ BUILDERS: dict[str, Callable[..., Step]] = {
     "comment": comment,
 }
 
-STEP_KINDS_DOC = """Step specs: {"kind": <kind>, ...params}. Kinds:
-- send_keys: keys (AHK Send syntax: "^s", "{Enter}", "{Ctrl Down}a{Ctrl Up}"), [delay], [control, window]
+STEP_KINDS_DOC = """Step specs: {"kind": <kind>, ...params}. In text fields, %VarName% inserts a variable's value. Kinds:
+- send_keys: keys (AHK Send syntax: "^s", "{Enter}", "{Ctrl Down}a{Ctrl Up}"), [delay], [control, window], [label]
 - type_text: text (literal), [control, window] (background control), [set_text=true]
 - click: x, y, [button=Left|Right|Middle], [count=1]   (coordinates follow the macro's CoordMode, default Window)
 - mouse_move: x, y
 - sleep: ms
 - run: target, [args], [working_dir], [pid_var]
 - win_wait / win_activate / win_close: window (e.g. "Untitled - Notepad", "ahk_exe notepad.exe"), [timeout_s for win_wait]
-- assign: var, value, [expression=false]  (literal text unless expression=true)
-- msgbox: text
+- assign: var, value, [expression=false], [literal=false]  (text, %Var% expanded; literal=true keeps % as-is)
+- msgbox: text, [title], [options]
 - if: condition (AHK expression) ... else ... end_if
 - loop: [count=0 infinite] ... loop_end ; break
 - gosub: label (another macro's name)
@@ -212,7 +214,7 @@ def inject_io(macro: Macro, inputs: dict[str, Any], outputs: list[str], out_dir:
     Each output variable is written to ``<out_dir>/<name>.txt``; a final
     ``__done__.txt`` marker proves the macro reached its end.
     """
-    pre = [assign(check_var_name(k), "" if v is None else str(v)) for k, v in inputs.items()]
+    pre = [assign(check_var_name(k), "" if v is None else str(v), literal=True) for k, v in inputs.items()]
     post = []
     for name in outputs:
         check_var_name(name)

@@ -59,7 +59,9 @@ def test_newline_in_field_rejected():
 
 
 def test_escape_text():
-    assert pmcfile.escape_text("a, b; 100%\nnext `x`") == "a`, b`; 100`%`nnext ``x``"
+    assert pmcfile.escape_text("a, b; 100%\nnext `x`") == "a`, b`; 100%`nnext ``x``"
+    assert pmcfile.escape_text("100%", literal_percent=True) == "100`%"
+    assert pmcfile.escape_text("Hi %Name%") == "Hi %Name%"  # variable reference survives
 
 
 def test_builders_match_pmc_rows():
@@ -89,8 +91,8 @@ def test_build_validation():
 
 def test_inject_io():
     m = pmcfile.Macro(name="M", steps=[steps.sleep(1)])
-    steps.inject_io(m, {"User": "a,b"}, ["Result"], r"C:\T\out")
-    assert m.steps[0].details == "User := a`,b"
+    steps.inject_io(m, {"User": "a,b 5%"}, ["Result"], r"C:\T\out")
+    assert m.steps[0].details == "User := a`,b 5`%"  # inputs arrive verbatim
     assert m.steps[-2].details == r"%Result%, C:\T\out\Result.txt, UTF-8"
     assert m.steps[-1].details.startswith("done, ")
     with pytest.raises(ValueError):

@@ -259,13 +259,17 @@ def dump(project: Project, path: str | Path) -> None:
 # ---- AHK / PMC escaping helpers -------------------------------------------
 
 
-def escape_text(value: str) -> str:
-    """Escape a literal string for a PMC text field (AHK v1 command-argument rules).
+def escape_text(value: str, literal_percent: bool = False) -> str:
+    """Escape a string for a PMC text field (AHK v1 command-argument rules).
 
-    Backtick, comma, percent and semicolon are escaped; newlines become `n, tabs `t.
+    Backtick, comma and semicolon are escaped; newlines become `n, tabs `t.
+    ``%Var%`` stays a variable reference, as in PMC's own editor, unless
+    literal_percent=True (used for values that must arrive verbatim, e.g. run inputs).
     """
     value = str(value).replace("\r\n", "\n").replace("\r", "\n")
-    out = value.replace("`", "``").replace(",", "`,").replace("%", "`%").replace(";", "`;")
+    out = value.replace("`", "``").replace(",", "`,").replace(";", "`;")
+    if literal_percent:
+        out = out.replace("%", "`%")
     return out.replace("\n", "`n").replace("\t", "`t")
 
 

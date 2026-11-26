@@ -19,6 +19,8 @@ build macros, run them with input/output variables, play and record in the live 
 control the desktop. See [Agent/README.md](Agent/README.md). Start PMC with `-agent` to enable the
 built-in agent bridge (`LIB/AgentBridge.ahk`).
 
+**Visual Board:** a drag-and-drop flow editor for the same `.pmc` files (File → Visual Board…).
+
 ## Translations
 
 You can make corrections to the Interface Language translations inside the application itself (Settings > Language editor).

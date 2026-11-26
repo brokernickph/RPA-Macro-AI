@@ -20,6 +20,32 @@ Claude Code, Cursor, custom agents built on an MCP SDK, …) can:
                               └─ AutoHotkey v1 snippets ── desktop primitives (click, keys, windows, search)
 ```
 
+## Visual Board
+
+A drag-and-drop flow editor for PMC macros that runs in your browser:
+
+* **Build visually:** drag actions (click, type, keys, open app, wait for window, if/else, repeat,
+  variables…) from the palette onto the **+** slots, then fill in the settings panel. If/Else-if/Else
+  branches sit side by side and loops wrap their body.
+* **Same files as PMC:** the board edits `.pmc` projects directly. Anything built on the board opens
+  in classic PMC and the other way round; rows the board has no form for are shown as raw PMC rows,
+  and steps you don't touch are saved exactly as they were.
+* **Run from the board:** **▶ Run** runs the macro headless with input and output variables;
+  **Play in PMC** plays it in the open PMC window; **■ Stop** aborts.
+* **Works alongside AI agents:** when an agent edits the open file through MCP, the board reloads
+  it live (or warns you if you have unsaved edits). Agents can open the board for you with the
+  `board_open` tool.
+* Undo/redo, Ctrl+S, Delete, Ctrl+D (duplicate), zoom, multiple macros as tabs, dark mode.
+
+Open it from PMC with **File → Visual Board…**, or from a terminal:
+
+```bash
+pmc-board "C:\Users\me\Documents\PMC Macros\invoice.pmc"
+```
+
+It listens on `127.0.0.1` only, and the link it opens carries a per-launch access token, so other
+web pages can't drive it. It exits on its own about two minutes after you close the tab.
+
 ## Install (Windows)
 
 1. Python 3.10+ and, for the desktop tools, **AutoHotkey v1.1** (<https://www.autohotkey.com>).
@@ -87,6 +113,7 @@ Claude Code, Cursor, custom agents built on an MCP SDK, …) can:
 | Live PMC | `pmc_launch`, `pmc_status`, `pmc_open`, `pmc_save`, `pmc_window` | control the app |
 | | `pmc_play`, `pmc_stop` | play (optionally waiting) / abort |
 | | `pmc_record_start`, `pmc_record_stop`, `pmc_get_live_macro` | capture a human demonstration as steps |
+| Board | `board_open` | open the Visual Board on a file, so the user can see or edit a macro |
 | Desktop | `desktop_screenshot`, `desktop_list_windows`, `desktop_window` | observe and manage windows |
 | | `desktop_click`, `desktop_send_keys`, `desktop_pixel_color`, `desktop_image_search` | act and verify |
 | | `desktop_run_ahk` | arbitrary AHK v1 (`full` only) |
@@ -151,10 +178,13 @@ pip install -e .[test]
 pytest
 ```
 
-The tests run on any OS. They cover lossless round trips of every bundled example `.pmc`, the
-step builders, path confinement and permission levels, and the MCP tools end to end over an
-in-process client against a simulated bridge and a fake PMC executable.
+The tests run on any OS. They cover lossless round trips of every bundled example `.pmc` (as rows
+and as board trees), that every step the board shows as a form rebuilds to the identical row, the
+step builders, path confinement and permission levels, the board's HTTP API and security checks,
+and the MCP tools end to end over an in-process client against a simulated bridge and a fake PMC
+executable. `tests/test_board_ui.py` drives the real board in Chromium via Playwright (skipped when
+Playwright isn't installed; set `PMC_TEST_CHROMIUM` to use an existing Chrome binary).
 
-**Not yet verified on Windows:** `LIB/AgentBridge.ahk`, the Win32 message sending, and the AHK
-snippets behind the `desktop_*` tools were written against the PMC source but still need a test
+**Not yet verified on Windows:** `LIB/AgentBridge.ahk`, the File → Visual Board menu item, the
+Win32 message sending, and the AHK snippets behind the `desktop_*` tools were written against the PMC source but still need a test
 pass on a real Windows machine.
