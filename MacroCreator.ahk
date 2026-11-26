@@ -229,6 +229,7 @@ IniRead, KeepDefKeys, %IniFilePath%, Options, KeepDefKeys, 0
 IniRead, TbNoTheme, %IniFilePath%, Options, TbNoTheme, 0
 IniRead, AutoBackup, %IniFilePath%, Options, AutoBackup, 1
 IniRead, MultInst, %IniFilePath%, Options, MultInst, 0
+IniRead, AgentBridgeOn, %IniFilePath%, Options, AgentBridge, 0
 IniRead, EvalDefault, %IniFilePath%, Options, EvalDefault, 1
 IniRead, CloseAction, %IniFilePath%, Options, CloseAction, %A_Space%
 IniRead, ShowLoopIfMark, %IniFilePath%, Options, ShowLoopIfMark, 1
@@ -1129,6 +1130,16 @@ If (A_Args.length())
 	WinGetActiveTitle, LastFoundWin
 	For n, Param in A_Args
 	{
+		If (Param = "-new")
+		{
+			ForceNewInst := 1 ; always start a separate instance (used by headless agent runs)
+			continue
+		}
+		If (Param = "-agent")
+		{
+			AgentBridgeOn := 1 ; enable LIB\AgentBridge.ahk (external control by AI agents / MCP)
+			continue
+		}
 		Params .= Param "`n"
 		If (Param = "-r")
 			RecOn := 1
@@ -1152,7 +1163,7 @@ If (A_Args.length())
 			ShowCtrlBar := 1
 	}
 	Files := RTrim(Params, "`n")
-	If (!MultInst) && (TargetID := WinExist("ahk_exe " A_ScriptFullPath))
+	If (!MultInst) && (!ForceNewInst) && (TargetID := WinExist("ahk_exe " A_ScriptFullPath))
 	{
 		Send_Params(Files, TargetID)
 		ExitApp
@@ -1174,6 +1185,7 @@ Else
 	If (ShowGroups)
 		GoSub, EnableGroups
 }
+AgentBridge_Start()
 Menu, Tray, Icon
 Gui, 1:Show, % ((WinState) ? "Maximize" : MainWinSize " " MainWinPos) ((HideWin) ? "Hide" : ""), % (CurrentFileName ? CurrentFileName " - " : "") AppName " v" CurrentVersion
 Gosub, GuiSize
@@ -16813,6 +16825,7 @@ return
 
 #Include <Hotkeys>
 #Include <Internal>
+#Include <AgentBridge>
 #Include <Recording>
 #Include <Playback>
 #Include <Export>

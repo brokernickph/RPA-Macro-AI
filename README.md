@@ -12,6 +12,13 @@ Windows 7, 8, 8.1, 10
 
 (NOT tested on Windows XP, Vista)
 
+## AI agents / RPA (MCP)
+
+PMC can be driven by AI agents as an RPA engine through the Model Context Protocol: agents can
+build macros, run them with input/output variables, play and record in the live app, and see and
+control the desktop. See [Agent/README.md](Agent/README.md). Start PMC with `-agent` to enable the
+built-in agent bridge (`LIB/AgentBridge.ahk`).
+
 ## Translations
 
 You can make corrections to the Interface Language translations inside the application itself (Settings > Language editor).

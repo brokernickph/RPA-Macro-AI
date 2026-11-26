@@ -1021,6 +1021,8 @@ Receive_Params(wParam, lParam)
 {
 	global
 	
+	If (NumGet(lParam + 0, 0, "UPtr") = 0x504D4341) ; "PMCA": agent bridge request
+		return AgentBridge_Receive(lParam)
 	StringAddress := NumGet(lParam + 2*A_PtrSize)
 ,	CopyOfData := StrGet(StringAddress)
 	Gui, 1:Default

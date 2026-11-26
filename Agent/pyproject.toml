@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pmc-mcp"
+version = "0.1.0"
+description = "MCP server that lets AI agents use Pulover's Macro Creator as an RPA engine"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+dependencies = [
+    "mcp>=1.9",
+    "anyio>=4",
+    "pillow>=10; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+pmc-mcp = "pmc_mcp.server:main"
+
+[tool.setuptools]
+packages = ["pmc_mcp"]
