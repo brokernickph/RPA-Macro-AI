@@ -171,3 +171,86 @@ def test_screenshot_returns_image_and_scale(env, monkeypatch):
     assert "image" in kinds
     text = next(c.text for c in r.content if c.type == "text")
     assert "scale=2.0000" in text and "size=1600x900" in text
+
+
+# ---- flows and the live browser through MCP ----------------------------------
+
+SHOP_PAGE = """<!doctype html><title>Shop</title><input id="q" aria-label="Search"><button onclick="document.getElementById('o').innerText='Got '+document.getElementById('q').value">Go</button><p id="o"></p>
+<table><tr><th>Item</th><th>Price</th></tr><tr><td>Pen</td><td>2</td></tr><tr><td>Lamp</td><td>40</td></tr></table>"""
+
+
+def _browser_available():
+    import os
+
+    pytest.importorskip("playwright.sync_api")
+    if os.environ.get("PMC_TEST_CHROMIUM"):
+        os.environ["PMC_BROWSER_EXECUTABLE"] = os.environ["PMC_TEST_CHROMIUM"]
+    os.environ["PMC_BROWSER_HEADLESS"] = "1"
+    from pmc_mcp.browser import BrowserSession
+
+    b = BrowserSession()
+    try:
+        b.open("about:blank")
+    except Exception as e:  # noqa: BLE001
+        pytest.skip(f"no browser: {e}")
+    finally:
+        b.close()
+
+
+def test_flow_create_read_update_run(env):
+    _browser_available()
+    cfg, _, bridge, root = env
+    (root / "shop.html").write_text(SHOP_PAGE, encoding="utf-8")
+    s = create_server(cfg, bridge)
+    steps = [
+        {"kind": "browser_open", "url": (root / "shop.html").as_uri()},
+        {"kind": "browser_table", "selector": "table", "var": "Rows"},
+        {"kind": "assign", "var": "Expensive", "value": "[]", "expression": True},
+        {"kind": "foreach", "items": "Rows", "item": "R", "steps": [
+            {"kind": "if", "condition": "R.Price > Limit", "then": [
+                {"kind": "assign", "var": "Expensive", "value": "Expensive + [R.Item]", "expression": True}]}]},
+    ]
+    r = payload(call(s, "flow_create", path="shop.rflow", flows=[{"name": "Main", "inputs": ["Limit"], "outputs": ["Expensive"], "steps": steps}]))
+    assert r["flows"] == [{"name": "Main", "steps": 4}]
+    back = payload(call(s, "flow_read", path="shop.rflow"))
+    assert back["flows"][0]["steps"] == steps
+    res = payload(call(s, "flow_run", path="shop.rflow", inputs={"Limit": 10}))
+    assert res["completed"] and res["outputs"] == {"Expensive": ["Lamp"]}, res
+    # update: add a search step; error reporting names the failing step
+    payload(call(s, "flow_update", path="shop.rflow", steps=steps[:1] + [{"kind": "browser_click", "selector": "#missing"}]))
+    bad = payload(call(s, "flow_run", path="shop.rflow", timeout_s=40))
+    assert not bad["completed"] and "step 2 (browser_click)" in bad["error"]
+
+
+def test_flow_validation(env):
+    cfg, _, bridge, _ = env
+    s = create_server(cfg, bridge)
+    r = call(s, "flow_create", path="x.rflow", flows=[{"name": "M", "steps": [{"kind": "teleport"}]}])
+    assert r.is_error and "unknown kind" in r.content[0].text
+    assert call(s, "flow_create", path="x.pmc", flows=[{"name": "M"}]).is_error
+
+
+def test_live_browser_tools(env):
+    _browser_available()
+    cfg, _, bridge, root = env
+    (root / "shop.html").write_text(SHOP_PAGE, encoding="utf-8")
+    s = create_server(cfg, bridge)
+
+    async def go():
+        async with Client(s) as c:
+            async def p(name, **a):
+                return payload(await c.call_tool(name, a))
+            await p("browser_open", url=(root / "shop.html").as_uri())
+            snap = await p("browser_snapshot")
+            ref = next(e["ref"] for e in snap["elements"] if e["label"] == "Search")
+            await p("browser_fill", ref=ref, text="lamp")
+            await p("browser_click", selector="text=Go")
+            got = await p("browser_extract", selector="#o")
+            table = await p("browser_table")
+            shot = await c.call_tool("browser_screenshot", {})
+            await p("browser_close")
+            return got, table, shot
+
+    got, table, shot = anyio.run(go)
+    assert got["value"] == "Got lamp" and table["count"] == 2
+    assert any(c.type == "image" for c in shot.content)

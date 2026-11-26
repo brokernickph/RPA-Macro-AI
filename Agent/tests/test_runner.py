@@ -129,3 +129,23 @@ def test_run_json(cfg, tmp_path, monkeypatch):
     assert res["ok"] and res["macro"]["name"] == "M2" and res["outputs"] == {"X": "1"}
     bad = _json.loads(cli.run_json("not json"))
     assert bad["ok"] is False and "error" in bad
+
+
+def test_cli_runs_rflow(tmp_path, monkeypatch, capsys):
+    import json as _json
+
+    from pmc_mcp import cli, engine
+
+    proj = engine.new_project("calc")
+    proj["flows"][0].update(inputs=["A"], outputs=["B"], tree=engine.steps_to_tree([
+        {"kind": "assign", "var": "B", "value": "A * 2", "expression": True},
+        {"kind": "file_append", "text": "B={{B}}", "path": str(tmp_path / "out.txt")}]))
+    engine.dump(proj, tmp_path / "calc.rflow")
+    monkeypatch.setenv("PMC_MCP_ROOTS", str(tmp_path / "other"))
+    assert cli.main([str(tmp_path / "calc.rflow"), "-i", "A=21", "-o", "B"]) == 0
+    res = _json.loads(capsys.readouterr().out)
+    assert res["outputs"] == {"B": 42} and res["flow"]["name"] == "Main"
+    assert (tmp_path / "out.txt").read_text() == "B=42"
+    assert _json.loads(cli.run_json(_json.dumps({"path": str(tmp_path / "calc.rflow"), "inputs": {"A": 5}, "outputs": ["B"]})))["outputs"] == {"B": 10}
+    (tmp_path / "x.txt").write_text("hi")
+    assert cli.main([str(tmp_path / "x.txt")]) == cli.EXIT_ERROR

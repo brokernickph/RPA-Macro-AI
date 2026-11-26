@@ -1,4 +1,4 @@
-"""`pmc-run`: run a PMC macro from any RPA platform, scheduler or script.
+"""`pmc-run`: run a PMC macro (.pmc) or flow (.rflow) from any RPA platform, scheduler or script.
 
     pmc-run invoice.pmc --macro Export --input InvoiceNo=INV-42 --output ExportPath
     pmc-run invoice.pmc --json '{"macro": "Export", "inputs": {"InvoiceNo": "INV-42"}, "outputs": ["ExportPath"]}'
@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from . import runner
+from . import engine, runner
 from .config import Config
 
 EXIT_OK, EXIT_ERROR, EXIT_INCOMPLETE, EXIT_TIMEOUT = 0, 1, 2, 3
@@ -33,15 +33,23 @@ def _cfg_for(path: str) -> tuple[Config, Path]:
     # The caller named this file explicitly, so its folder is allowed for this run.
     if not any(p.parent == r or r in p.parent.parents for r in cfg.roots):
         cfg.roots.append(p.parent)
-    return cfg, cfg.safe_path(str(p), must_exist=True)
+    if p.suffix.lower() not in (".pmc", engine.SUFFIX):
+        raise ValueError(f"expected a .pmc macro or an {engine.SUFFIX} flow: {p}")
+    return cfg, cfg.safe_path(str(p), must_exist=True, suffix=None)
 
 
 def run(path: str, macro: str | int | None = None, inputs: dict[str, Any] | None = None,
         outputs: list[str] | None = None, timeout_s: float | None = None) -> dict[str, Any]:
+    """Run a .pmc macro (headless PMC) or an .rflow flow (browser + desktop engine)."""
     cfg, p = _cfg_for(path)
     cfg.audit("pmc_run_cli", path=str(p), macro=macro, inputs=sorted((inputs or {}).keys()))
+    timeout = float(timeout_s or cfg.default_timeout)
+    if p.suffix.lower() == engine.SUFFIX:
+        res = engine.Engine(cfg).run(engine.load(p), macro or None, dict(inputs or {}), list(outputs or []) or None, timeout)
+        res["log"] = res.get("log", [])[-200:]  # keep the result readable
+        return res
     return runner.run_macro_headless(cfg, p, macro or None, {k: "" if v is None else str(v) for k, v in (inputs or {}).items()},
-                                     list(outputs or []), float(timeout_s or cfg.default_timeout))
+                                     list(outputs or []), timeout)
 
 
 def run_json(request: str) -> str:
@@ -70,9 +78,9 @@ def _kv(items: list[str]) -> dict[str, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="pmc-run", description="Run a Pulover's Macro Creator macro headless and print the result as JSON.")
-    ap.add_argument("file", help=".pmc project")
-    ap.add_argument("--macro", "-m", help="macro name or 1-based index (default: first)")
+    ap = argparse.ArgumentParser(prog="pmc-run", description="Run a PMC macro (.pmc) or a browser+desktop flow (.rflow) and print the result as JSON.")
+    ap.add_argument("file", help=".pmc macro project or .rflow flow")
+    ap.add_argument("--macro", "-m", "--flow", "-f", dest="macro", help="macro/flow name or 1-based index (default: first)")
     ap.add_argument("--input", "-i", action="append", default=[], metavar="NAME=VALUE", help="input variable (repeatable)")
     ap.add_argument("--output", "-o", action="append", default=[], metavar="NAME", help="output variable to return (repeatable)")
     ap.add_argument("--json", dest="json_req", metavar="JSON", help="macro/inputs/outputs/timeout_s as one JSON object")

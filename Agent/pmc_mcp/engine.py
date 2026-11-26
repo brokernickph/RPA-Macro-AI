@@ -557,3 +557,75 @@ class Engine:
         return ""
 
 
+
+
+# ---- compact authoring form (for agents) ---------------------------------------
+#   [{"kind": "browser_open", "url": "..."},
+#    {"kind": "if", "condition": "x > 1", "then": [...], "elif": [{"condition": "...", "then": [...]}], "else": [...]},
+#    {"kind": "loop", "count": 3, "steps": [...]},
+#    {"kind": "foreach", "items": "Rows", "item": "Row", "steps": [...]}]
+
+KINDS = sorted(n[3:] for n in dir(Engine) if n.startswith("_k_"))
+
+
+def steps_to_tree(steps: list[dict]) -> list[dict]:
+    tree = []
+    for i, s in enumerate(steps or [], 1):
+        if not isinstance(s, dict) or "kind" not in s:
+            raise FlowError(f"step {i}: each step needs a 'kind'")
+        s = dict(s)
+        kind = s.pop("kind")
+        if kind == "if":
+            branches = [{"head": {"kind": "if", "condition": s.get("condition", "")}, "body": steps_to_tree(s.get("then", []))}]
+            for e in s.get("elif") or []:
+                branches.append({"head": {"kind": "if", "condition": e.get("condition", "")}, "body": steps_to_tree(e.get("then", []))})
+            els = {"head": None, "body": steps_to_tree(s["else"])} if s.get("else") is not None else None
+            tree.append({"t": "if", "branches": branches, "else": els, "end": None})
+        elif kind in ("loop", "foreach"):
+            head = {"kind": kind, **{k: v for k, v in s.items() if k != "steps"}}
+            if kind == "foreach" and not head.get("items"):
+                raise FlowError(f"step {i}: foreach needs 'items' (an expression such as Rows)")
+            tree.append({"t": "loop", "head": head, "body": steps_to_tree(s.get("steps", [])), "end": None})
+        elif kind in KINDS:
+            tree.append({"t": "step", "spec": {"kind": kind, **s}})
+        else:
+            raise FlowError(f"step {i}: unknown kind {kind!r}; valid: {KINDS + ['if', 'loop', 'foreach']}")
+    return tree
+
+
+def tree_to_steps(tree: list[dict]) -> list[dict]:
+    out = []
+    for n in tree or []:
+        if n.get("t") == "step":
+            out.append(dict(n.get("spec") or {"kind": "raw", **(n.get("step") or {})}))
+        elif n.get("t") == "if":
+            brs = n.get("branches") or []
+            cond = lambda h: (h or {}).get("condition", (h or {}).get("details", ""))  # noqa: E731
+            d = {"kind": "if", "condition": cond(brs[0]["head"]) if brs else "", "then": tree_to_steps(brs[0]["body"]) if brs else []}
+            if len(brs) > 1:
+                d["elif"] = [{"condition": cond(b["head"]), "then": tree_to_steps(b["body"])} for b in brs[1:]]
+            if n.get("else") is not None:
+                d["else"] = tree_to_steps(n["else"].get("body"))
+            out.append(d)
+        elif n.get("t") == "loop":
+            head = dict(n.get("head") or {"kind": "loop"})
+            kind = head.pop("kind", "loop")
+            out.append({"kind": "foreach" if kind == "foreach" else "loop", **head, "steps": tree_to_steps(n.get("body"))})
+    return out
+
+
+STEP_KINDS_DOC = """Flow steps ({"kind": ..., params}); text params accept {{expressions}} such as {{Row.Total}}.
+Browser: browser_open url | browser_click selector | browser_fill selector, text, [submit] | browser_press key, [selector]
+  | browser_select selector, value | browser_wait selector or text, [timeout_s], [var: store found=true/false instead of failing]
+  | browser_extract selector, var, [attribute], [all] | browser_table selector, var (list of row records) | browser_screenshot path | browser_close
+  Selectors: CSS (#id, .class), text=Sign in, role=button[name="Save"], or xpath=...
+Desktop (Windows): click x, y, [button, count, relative_to=screen|window|client, window] | mouse_move x, y | type_text text, [window, control]
+  | send_keys keys (AHK syntax: ^s {Enter} !{F4}), [window, control] | run target, [args, working_dir, pid_var]
+  | win_wait window, [timeout_s] | win_activate window | win_close window | msgbox text, [title] | command name, params (any AHK v1 command)
+PMC macros: run_macro path (.pmc), [macro], [inputs {Name: "{{Var}}"}], [outputs [names] -> become flow variables], [timeout_s]
+Data & control: assign var, value, [expression] | log message | file_append text, path | sleep ms | comment text | break
+Blocks: {"kind": "if", "condition": "Total > 100", "then": [...], "elif": [{"condition": ..., "then": [...]}], "else": [...]}
+  {"kind": "loop", "count": 3, "steps": [...]} (count 0 = until break; {{index}} is 1-based)
+  {"kind": "foreach", "items": "Rows", "item": "Row", "steps": [...]}
+Conditions/expressions: Total > 100 and Status = "Paid", len(Rows) > 0, Name.lower().startswith("inv"), Row.Customer
+  (single = is equality; undefined names are ""). Every step may have "enabled": false and a "note"."""

@@ -27,20 +27,24 @@ try:
 except ImportError:
     from mcp.types import ToolAnnotations  # type: ignore[no-redef]
 
-from . import desktop, pmcfile, runner
+from . import desktop, engine, pmcfile, runner
 from . import steps as stepkit
 from .bridge import BridgeClient, BridgeError
 from .config import Config
 
 INSTRUCTIONS = """\
-Pulover's Macro Creator (PMC) RPA server. Typical workflow:
-1. Observe: desktop_screenshot / desktop_list_windows to see the screen.
-2. Build: macro_create / macro_add_steps write a .pmc macro (see macro_step_kinds), or
-   pmc_record_start / pmc_record_stop capture a human demonstration in the PMC app.
-3. Execute: macro_run runs a macro headless with input variables and returns output
-   variables; pmc_play plays it in the visible PMC app.
-4. Verify with another screenshot. Use pmc_stop to abort a running macro.
-Prefer window-relative targets (window titles, controls) over raw screen coordinates.
+RPA Macro AI: browser + desktop automation built on Pulover's Macro Creator (PMC).
+Pick the right layer:
+- Web pages: browser_open, then browser_snapshot to see the page and element refs, then
+  browser_click / browser_fill / browser_extract / browser_table.
+- Windows apps: desktop_screenshot / desktop_list_windows to observe, then desktop_click /
+  desktop_send_keys / desktop_window. Recorded or hand-built PMC macros (.pmc): macro_* tools,
+  macro_run (headless, inputs -> outputs), pmc_record_start / pmc_record_stop to learn from a human.
+- Repeatable automations that mix both: flows (.rflow). Call flow_step_kinds, then flow_create,
+  flow_run (returns outputs and a step log), and fix with flow_read / flow_update. Flows can call
+  PMC macros (run_macro), loop over scraped tables (foreach) and branch (if).
+Verify results (screenshot / snapshot) before reporting success. pmc_stop / flow_stop abort runs.
+board_open shows a macro or flow to the user in the Visual Board.
 Files are confined to the configured macro directories; relative paths resolve there.
 """
 
@@ -344,6 +348,160 @@ def create_server(cfg: Config | None = None, bridge: BridgeClient | None = None)
         Returns screen coordinates (top-left, or center if center=true)."""
         img = cfg.safe_path(image_path, must_exist=True, suffix=None)
         return desktop.image_search(cfg, str(img), x1, y1, x2, y2, variation, center)
+
+    # ======================================================================
+    # Browser (live session for the agent)
+    # ======================================================================
+
+    live: dict[str, Any] = {}
+
+    def br():
+        if "browser" not in live:
+            from .browser import BrowserSession
+
+            live["browser"] = BrowserSession(allowed_file_roots=cfg.roots)
+        return live["browser"]
+
+    @tool("standard", ACT)
+    def browser_open(url: str) -> dict:
+        """Open a URL in the automation browser (Edge on Windows by default; logins persist when
+        PMC_BROWSER_PROFILE is set). Starts the browser if needed."""
+        return br().open(url)
+
+    @tool("readonly", READ, audit=False)
+    def browser_snapshot(limit: int = 150) -> dict:
+        """Page title, URL, visible text (trimmed) and the interactive elements, each with a `ref`
+        (e1, e2, ...) usable in browser_click / browser_fill instead of a selector."""
+        return br().snapshot(limit)
+
+    @tool("standard", ACT)
+    def browser_click(selector: str = "", ref: str = "", button: str = "left", count: int = 1) -> dict:
+        """Click an element by selector (CSS, text=..., role=...[name=...]) or by ref from browser_snapshot."""
+        return br().click(selector or None, ref or None, button, count)
+
+    @tool("standard", ACT)
+    def browser_fill(text: str, selector: str = "", ref: str = "", submit: bool = False) -> dict:
+        """Type into an input/textarea (replacing its value); submit=true presses Enter afterwards."""
+        return br().fill(text, selector or None, ref or None, submit)
+
+    @tool("standard", ACT)
+    def browser_press(key: str, selector: str = "", ref: str = "") -> dict:
+        """Press a key such as Enter, Tab, Control+A (on an element, or the page)."""
+        return br().press(key, selector or None, ref or None)
+
+    @tool("standard", ACT)
+    def browser_select(value: str, selector: str = "", ref: str = "") -> dict:
+        """Choose an option of a <select> by value or label."""
+        return br().select(value, selector or None, ref or None)
+
+    @tool("readonly", READ, audit=False)
+    def browser_wait(selector: str = "", text: str = "", timeout_s: int = 15) -> dict:
+        """Wait until an element (selector) or some text is visible. Returns found true/false."""
+        return br().wait(selector or None, text or None, timeout_s)
+
+    @tool("readonly", READ, audit=False)
+    def browser_extract(selector: str = "", ref: str = "", attribute: str = "", all: bool = False) -> dict:
+        """Read text (or an attribute such as href) of the first, or all, matching elements."""
+        return {"value": br().extract(selector or None, ref or None, attribute, all)}
+
+    @tool("readonly", READ, audit=False)
+    def browser_table(selector: str = "table") -> dict:
+        """Read an HTML table as a list of row records keyed by its header cells."""
+        rows = br().table(selector)
+        return {"rows": rows, "count": len(rows)}
+
+    @tool("readonly", READ, audit=False)
+    def browser_screenshot(full_page: bool = False) -> list:
+        """Screenshot of the current page."""
+        return [Image(data=br().screenshot(full_page=full_page), format="png"), str(br().info())]
+
+    @tool("full", ACT)
+    def browser_evaluate(script: str) -> dict:
+        """Run JavaScript in the page and return its result (permission level 'full' only)."""
+        return {"result": br().evaluate(script)}
+
+    @tool("standard", ACT, audit=False)
+    def browser_close() -> dict:
+        """Close the automation browser."""
+        if "browser" in live:
+            live.pop("browser").close()
+        return {"closed": True}
+
+    # ======================================================================
+    # Flows (.rflow): browser + desktop + PMC macros in one automation
+    # ======================================================================
+
+    @tool("readonly", READ, audit=False)
+    def flow_step_kinds() -> str:
+        """Describe the steps, blocks and expressions accepted by flow_create / flow_update."""
+        return engine.STEP_KINDS_DOC
+
+    @tool("standard", EDIT)
+    def flow_create(path: str, flows: list[dict], overwrite: bool = False, name: str = "") -> dict:
+        """Create an .rflow automation. flows: [{"name": "Main", "inputs": ["InvoiceNo"],
+        "outputs": ["Total"], "steps": [<step>, ...]}]; see flow_step_kinds for steps and blocks."""
+        p = cfg.safe_path(path, suffix=engine.SUFFIX)
+        if p.exists() and not overwrite:
+            raise FileExistsError(f"{p} exists; pass overwrite=true to replace it")
+        proj = {"format": engine.FORMAT, "version": 1, "name": name or p.stem, "flows": [
+            {"name": f.get("name") or f"Flow{i}", "inputs": list(f.get("inputs") or []), "outputs": list(f.get("outputs") or []),
+             "tree": engine.steps_to_tree(f.get("steps") or [])} for i, f in enumerate(flows or [], 1)]}
+        if not proj["flows"]:
+            raise ValueError("at least one flow is required")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        engine.dump(proj, p)
+        return {"path": str(p), "flows": [{"name": f["name"], "steps": len(f["tree"])} for f in proj["flows"]]}
+
+    @tool("readonly", READ)
+    def flow_read(path: str, flow: str = "") -> dict:
+        """Read an .rflow automation in the compact step form (or one flow by name/index)."""
+        proj = engine.load(cfg.safe_path(path, must_exist=True, suffix=engine.SUFFIX))
+        sel = [engine.find_flow(proj, flow)[1]] if flow else proj["flows"]
+        return {"name": proj.get("name"), "flows": [
+            {"name": f["name"], "inputs": f["inputs"], "outputs": f["outputs"], "steps": engine.tree_to_steps(f["tree"])} for f in sel]}
+
+    @tool("standard", EDIT)
+    def flow_update(path: str, steps: list[dict], flow: str = "", inputs: list[str] | None = None,
+                    outputs: list[str] | None = None, new_flow: bool = False) -> dict:
+        """Replace one flow's steps (read it first with flow_read), or add a flow with new_flow=true."""
+        p = cfg.safe_path(path, must_exist=True, suffix=engine.SUFFIX)
+        proj = engine.load(p)
+        tree = engine.steps_to_tree(steps)
+        if new_flow:
+            if not flow or any(f["name"] == flow for f in proj["flows"]):
+                raise ValueError("new_flow needs a new, unique flow name")
+            proj["flows"].append({"name": flow, "inputs": list(inputs or []), "outputs": list(outputs or []), "tree": tree})
+            i = len(proj["flows"])
+        else:
+            i, f = engine.find_flow(proj, flow or None)
+            f["tree"] = tree
+            if inputs is not None:
+                f["inputs"] = list(inputs)
+            if outputs is not None:
+                f["outputs"] = list(outputs)
+        engine.dump(proj, p)
+        return {"path": str(p), "flow": i, "steps": len(tree)}
+
+    @tool("standard", ACT)
+    def flow_run(path: str, flow: str = "", inputs: dict[str, Any] | None = None, outputs: list[str] | None = None,
+                 timeout_s: int = 0) -> dict:
+        """Run an .rflow automation (browser + desktop + PMC macros) and wait for it.
+        Returns completed, error (with the failing step), outputs and a step log."""
+        p = cfg.safe_path(path, must_exist=True, suffix=engine.SUFFIX)
+        eng = engine.Engine(cfg)
+        live["engine"] = eng
+        try:
+            return eng.run(engine.load(p), flow or None, inputs or {}, outputs, timeout_s or cfg.default_timeout)
+        finally:
+            live.pop("engine", None)
+
+    @tool("standard", ACT, audit=False)
+    def flow_stop() -> dict:
+        """Stop the flow that flow_run is running."""
+        eng = live.get("engine")
+        if eng:
+            eng.stop()
+        return {"stopping": bool(eng)}
 
     # ======================================================================
     # Visual board
