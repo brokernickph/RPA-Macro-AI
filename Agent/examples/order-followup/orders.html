@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Orders – Demo Shop Admin</title>
+<style>
+ body{font:14px system-ui,sans-serif;margin:24px;color:#222} h1{font-size:20px}
+ table{border-collapse:collapse;margin-top:12px} th,td{border:1px solid #ccc;padding:6px 10px;text-align:left} th{background:#f2f4f8}
+ .hidden{display:none}
+</style></head>
+<body>
+<h1>Orders</h1>
+<label>Status <select id="status" onchange="filter()">
+  <option value="all">All</option><option value="open">Open</option><option value="paid">Paid</option></select></label>
+<table id="orders">
+  <tr><th>Order</th><th>Customer</th><th>Status</th><th>Total</th></tr>
+  <tr data-s="open"><td>A-1001</td><td>Ada Lovelace</td><td>open</td><td>45.00</td></tr>
+  <tr data-s="paid"><td>A-1002</td><td>Grace Hopper</td><td>paid</td><td>310.00</td></tr>
+  <tr data-s="open"><td>A-1003</td><td>Alan Turing</td><td>open</td><td>129.90</td></tr>
+  <tr data-s="open"><td>A-1004</td><td>Katherine Johnson</td><td>open</td><td>480.00</td></tr>
+  <tr data-s="paid"><td>A-1005</td><td>Linus Torvalds</td><td>paid</td><td>18.50</td></tr>
+</table>
+<script>
+function filter(){var s=document.getElementById('status').value;
+  document.querySelectorAll('#orders tr[data-s]').forEach(function(r){
+    if(s==='all'||r.dataset.s===s){r.classList.remove('hidden');r.removeAttribute('hidden')}else{r.classList.add('hidden');r.setAttribute('hidden','')}});}
+</script>
+</body></html>

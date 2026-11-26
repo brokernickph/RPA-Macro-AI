@@ -139,7 +139,7 @@ class Board:
             self._engine = eng
             try:
                 return eng.run(engine.load(p), body.get("macro") or None, body.get("inputs") or {},
-                               body.get("outputs") or None, timeout)
+                               body.get("outputs") or None, timeout, base_dir=p.parent)
             finally:
                 self._engine = None
         return runner.run_macro_headless(self.cfg, p, body.get("macro") or None, body.get("inputs") or {},

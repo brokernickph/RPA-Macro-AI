@@ -45,7 +45,7 @@ def run(path: str, macro: str | int | None = None, inputs: dict[str, Any] | None
     cfg.audit("pmc_run_cli", path=str(p), macro=macro, inputs=sorted((inputs or {}).keys()))
     timeout = float(timeout_s or cfg.default_timeout)
     if p.suffix.lower() == engine.SUFFIX:
-        res = engine.Engine(cfg).run(engine.load(p), macro or None, dict(inputs or {}), list(outputs or []) or None, timeout)
+        res = engine.Engine(cfg).run(engine.load(p), macro or None, dict(inputs or {}), list(outputs or []) or None, timeout, base_dir=p.parent)
         res["log"] = res.get("log", [])[-200:]  # keep the result readable
         return res
     return runner.run_macro_headless(cfg, p, macro or None, {k: "" if v is None else str(v) for k, v in (inputs or {}).items()},

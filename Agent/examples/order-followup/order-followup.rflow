@@ -1,0 +1,150 @@
+{
+  "format": "rflow",
+  "version": 1,
+  "name": "Order follow-up",
+  "flows": [
+    {
+      "name": "Main",
+      "inputs": [
+        "Limit"
+      ],
+      "outputs": [
+        "FollowUp",
+        "Count"
+      ],
+      "tree": [
+        {
+          "t": "step",
+          "spec": {
+            "kind": "comment",
+            "text": "Find open orders above a limit on the shop admin page, then report them."
+          }
+        },
+        {
+          "t": "step",
+          "spec": {
+            "kind": "browser_open",
+            "url": "orders.html"
+          }
+        },
+        {
+          "t": "step",
+          "spec": {
+            "kind": "browser_select",
+            "selector": "#status",
+            "value": "open"
+          }
+        },
+        {
+          "t": "step",
+          "spec": {
+            "kind": "browser_table",
+            "selector": "#orders",
+            "var": "Rows"
+          }
+        },
+        {
+          "t": "step",
+          "spec": {
+            "kind": "assign",
+            "var": "FollowUp",
+            "value": "[]",
+            "expression": true
+          }
+        },
+        {
+          "t": "loop",
+          "head": {
+            "kind": "foreach",
+            "items": "Rows",
+            "item": "Row"
+          },
+          "body": [
+            {
+              "t": "if",
+              "branches": [
+                {
+                  "head": {
+                    "kind": "if",
+                    "condition": "Row.Status = \"open\" and Row.Total > Limit"
+                  },
+                  "body": [
+                    {
+                      "t": "step",
+                      "spec": {
+                        "kind": "assign",
+                        "var": "FollowUp",
+                        "value": "FollowUp + [Row.Order]",
+                        "expression": true
+                      }
+                    },
+                    {
+                      "t": "step",
+                      "spec": {
+                        "kind": "log",
+                        "message": "Follow up {{Row.Order}} for {{Row.Customer}} ({{Row.Total}})"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "else": null,
+              "end": null
+            }
+          ],
+          "end": null
+        },
+        {
+          "t": "step",
+          "spec": {
+            "kind": "assign",
+            "var": "Count",
+            "value": "len(FollowUp)",
+            "expression": true
+          }
+        },
+        {
+          "t": "step",
+          "spec": {
+            "kind": "file_append",
+            "text": "Orders to follow up: {{FollowUp}}\n",
+            "path": "report.txt"
+          }
+        },
+        {
+          "t": "step",
+          "spec": {
+            "kind": "browser_screenshot",
+            "path": "orders.png"
+          }
+        },
+        {
+          "t": "step",
+          "spec": {
+            "kind": "run",
+            "target": "notepad.exe",
+            "enabled": false,
+            "note": "Windows: enable these three steps to hand the result to a desktop app"
+          }
+        },
+        {
+          "t": "step",
+          "spec": {
+            "kind": "win_wait",
+            "window": "ahk_exe notepad.exe",
+            "enabled": false
+          }
+        },
+        {
+          "t": "step",
+          "spec": {
+            "kind": "type_text",
+            "text": "Follow up {{Count}} orders: {{FollowUp}}",
+            "window": "ahk_exe notepad.exe",
+            "enabled": false
+          }
+        }
+      ]
+    }
+  ]
+}

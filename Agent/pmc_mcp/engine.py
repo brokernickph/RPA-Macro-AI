@@ -268,6 +268,7 @@ class Engine:
         self.vars: dict[str, Any] = {}
         self.log: list[dict] = []
         self.deadline = float("inf")
+        self.base_dir: Path | None = None
 
     def _default_browser(self):
         from .browser import BrowserSession
@@ -276,7 +277,10 @@ class Engine:
 
     # ---- public ------------------------------------------------------------
     def run(self, project: dict, flow: int | str | None = None, inputs: dict[str, Any] | None = None,
-            outputs: list[str] | None = None, timeout_s: float | None = None, keep_browser: bool = False) -> dict:
+            outputs: list[str] | None = None, timeout_s: float | None = None, keep_browser: bool = False,
+            base_dir: str | Path | None = None) -> dict:
+        """base_dir: the flow file's folder; relative file paths in steps resolve there."""
+        self.base_dir = Path(base_dir).resolve() if base_dir else None
         idx, f = find_flow(project, flow)
         self.vars = {"index": 0}
         for name in f.get("inputs") or []:
@@ -423,7 +427,10 @@ class Engine:
         return self.browser
 
     def _path(self, path: str) -> Path:
-        return self.cfg.safe_path(str(path), suffix=None)
+        p = Path(str(path)).expanduser()
+        if not p.is_absolute() and self.base_dir:
+            p = self.base_dir / p
+        return self.cfg.safe_path(str(p), suffix=None)
 
     # ---- step kinds: general -----------------------------------------------------
     def _k_sleep(self, ms=1000):
@@ -496,7 +503,10 @@ class Engine:
 
     # ---- PMC macros ------------------------------------------------------------
     def _k_run_macro(self, path="", macro="", inputs=None, outputs=None, timeout_s=0):
-        p = self.cfg.safe_path(str(path), must_exist=True)
+        mp = Path(str(path)).expanduser()
+        if not mp.is_absolute() and self.base_dir and (self.base_dir / mp).is_file():
+            mp = self.base_dir / mp
+        p = self.cfg.safe_path(str(mp), must_exist=True)
         if isinstance(inputs, str):  # "Name=value" lines, as typed in the board
             inputs = dict(line.split("=", 1) for line in inputs.splitlines() if "=" in line)
         ins = {k.strip(): render(v, self.vars) for k, v in (inputs or {}).items()} if isinstance(inputs, dict) else {}
@@ -511,7 +521,10 @@ class Engine:
 
     # ---- browser -------------------------------------------------------------
     def _k_browser_open(self, url=""):
-        r = self._b().open(str(url))
+        url = str(url)
+        if "://" not in url and self.base_dir and (self.base_dir / url).is_file():
+            url = (self.base_dir / url).resolve().as_uri()  # a page shipped next to the flow
+        r = self._b().open(url)
         return r.get("url", "")
 
     def _k_browser_click(self, selector=""):

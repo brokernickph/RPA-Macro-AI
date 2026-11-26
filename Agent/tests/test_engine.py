@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import threading
 import time
 
@@ -204,3 +205,18 @@ def test_browser_missing_element_fails_cleanly(cfg, browser_ok):
     t = time.monotonic()
     res = Engine(cfg, desktop_mod=FakeDesktop()).run(p)
     assert not res["completed"] and "did not appear" in res["error"] and time.monotonic() - t < 30
+
+
+def test_shipped_example_flow(tmp_path, browser_ok):
+    import shutil
+
+    src = Path(__file__).resolve().parents[1] / "examples" / "order-followup"
+    work = tmp_path / "order-followup"
+    shutil.copytree(src, work)
+    cfg = Config(roots=[work.resolve()], audit_log=None)
+    res = Engine(cfg, desktop_mod=FakeDesktop()).run(engine.load(work / "order-followup.rflow"), inputs={"Limit": "100"},
+                                                     base_dir=work)
+    assert res["completed"], res
+    assert res["outputs"] == {"FollowUp": ["A-1003", "A-1004"], "Count": 2}
+    assert (work / "report.txt").read_text() == 'Orders to follow up: ["A-1003", "A-1004"]\n'
+    assert (work / "orders.png").exists()

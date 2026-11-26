@@ -9,5 +9,6 @@ requires-python = ">=3.10"
 dependencies = [
     "uipath-mcp>=0.3",
     "anyio>=4",
+    "playwright>=1.40",
     "pillow>=10; sys_platform == 'win32'",
 ]

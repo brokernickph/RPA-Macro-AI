@@ -491,7 +491,7 @@ def create_server(cfg: Config | None = None, bridge: BridgeClient | None = None)
         eng = engine.Engine(cfg)
         live["engine"] = eng
         try:
-            return eng.run(engine.load(p), flow or None, inputs or {}, outputs, timeout_s or cfg.default_timeout)
+            return eng.run(engine.load(p), flow or None, inputs or {}, outputs, timeout_s or cfg.default_timeout, base_dir=p.parent)
         finally:
             live.pop("engine", None)
 
