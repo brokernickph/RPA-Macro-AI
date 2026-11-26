@@ -37,6 +37,8 @@ A drag-and-drop flow editor for PMC macros that runs in your browser:
   `board_open` tool.
 * Undo/redo, Ctrl+S, Delete, Ctrl+D (duplicate), zoom, multiple macros as tabs, dark mode.
 
+![Visual Board](docs/screenshots/01-board-overview.png)
+
 Open it from PMC with **File → Visual Board…**, or from a terminal:
 
 ```bash

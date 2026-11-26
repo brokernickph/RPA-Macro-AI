@@ -20,6 +20,7 @@ control the desktop. See [Agent/README.md](Agent/README.md). Start PMC with `-ag
 built-in agent bridge (`LIB/AgentBridge.ahk`).
 
 **Visual Board:** a drag-and-drop flow editor for the same `.pmc` files (File → Visual Board…).
+See [CHANGELOG.md](CHANGELOG.md) for everything this fork adds.
 
 ## Translations
 

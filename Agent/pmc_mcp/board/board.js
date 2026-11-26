@@ -150,6 +150,8 @@ function addKind(kind) {
   const node = newNode(kind);
   if (S.pendingSlot) { const { list, at } = S.pendingSlot; return insert(list, at, node); }
   const sel = S.sel && S.byId.get(S.sel);
+  if (sel && sel.node && sel.node.t === "loop") return insert(sel.node.body, sel.node.body.length, node); // into the loop
+  if (sel && sel.node && sel.node.t === "if") { const b = sel.node.branches[0].body; return insert(b, b.length, node); } // into "Then"
   if (sel && sel.node) return insert(sel.list, sel.list.indexOf(sel.node) + 1, node);
   insert(macro().tree, macro().tree.length, node);
 }
@@ -220,8 +222,12 @@ function slot(list, at) {
   if (S.pendingSlot && S.pendingSlot.list === list && S.pendingSlot.at === at) s.classList.add("drop");
   return s;
 }
-function renderList(list) {
+function renderList(list, inBlock = false) {
   const f = el("div", { class: "flow" });
+  if (inBlock && !list.length) {
+    f.append(slot(list, 0), el("div", { class: "empty-hint", text: "Drop steps here" }), slot(list, 0));
+    return f;
+  }
   f.append(slot(list, 0));
   list.forEach((n, i) => { f.append(renderNode(n), slot(list, i + 1)); });
   return f;
@@ -246,12 +252,12 @@ function renderNode(node) {
   if (node.t === "step") return card(node);
   const b = el("div", { class: "block" }, card(node));
   if (node.t === "loop") {
-    b.append(el("div", { class: "loop-body" }, renderList(node.body)));
+    b.append(el("div", { class: "loop-body" }, renderList(node.body, true)));
   } else {
     const cols = node.branches.map((br, i) => el("div", { class: "branch" },
       el("div", { class: "branch-label" }, i === 0 ? "Then" : "Else if", i ? el("span", { class: "cond", text: headVal(br.head, "condition", "details") }) : null),
-      renderList(br.body)));
-    if (node.else) cols.push(el("div", { class: "branch" }, el("div", { class: "branch-label", text: "Else" }), renderList(node.else.body)));
+      renderList(br.body, true)));
+    if (node.else) cols.push(el("div", { class: "branch" }, el("div", { class: "branch-label", text: "Else" }), renderList(node.else.body, true)));
     b.append(el("div", { class: "branches" }, cols));
   }
   return b;
@@ -290,7 +296,7 @@ function renderInspector() {
   const s = S.sel && S.byId.get(S.sel);
   if (!s || !s.node) {
     ins.replaceChildren(el("div", { class: "empty" }, "Select a step to edit it.", el("br"), el("br"),
-      "Drag actions from the left onto a ", el("b", { text: "+" }), " slot, or click an action to add it after the selected step."));
+      "Drag actions from the left onto a ", el("b", { text: "+" }), " slot, or click an action to add it after the selected step (or inside a selected Repeat / If)."));
     return;
   }
   const n = s.node, parts = [];
@@ -387,6 +393,8 @@ async function open(path, keepTab = false) {
   $("fileSelect").value = S.path;
   try { history.replaceState(null, "", `#t=${S.token}&f=${encodeURIComponent(S.path)}`); } catch { /* ignore */ }
   render();
+  const w = $("canvasWrap"); // wide flows: start centred on the Start node
+  w.scrollTop = 0; w.scrollLeft = Math.max(0, ($("canvas").scrollWidth * S.zoom - w.clientWidth) / 2);
 }
 async function save() {
   if (!S.path) return toast("Create or open a project first", true);
@@ -491,12 +499,12 @@ function bindKeys() {
     const typing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || "");
     const mod = e.ctrlKey || e.metaKey;
     if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
+    else if (e.key === "Escape") { document.activeElement?.blur(); S.sel = null; S.pendingSlot = null; render(); }
     else if (typing) return;
     else if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); restore(S.undo, S.redo); }
     else if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); restore(S.redo, S.undo); }
     else if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); duplicateSel(); }
     else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); removeSel(); }
-    else if (e.key === "Escape") { S.sel = null; S.pendingSlot = null; render(); }
   });
   $("canvasWrap").addEventListener("click", () => { if (S.sel || S.pendingSlot) { S.sel = null; S.pendingSlot = null; render(); } });
   $("canvasWrap").addEventListener("wheel", (e) => { if (e.ctrlKey) { e.preventDefault(); zoom(e.deltaY < 0 ? 0.1 : -0.1); } }, { passive: false });

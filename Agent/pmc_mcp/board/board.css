@@ -43,10 +43,12 @@ textarea { resize: vertical; font-family: ui-monospace, "Cascadia Mono", Consola
 .logo { color: var(--accent); font-size: 18px; }
 .filebox { display: flex; gap: 6px; align-items: center; }
 .filebox select { width: 220px; }
-.tabs { display: flex; gap: 4px; overflow-x: auto; max-width: 40vw; }
+.tabs { display: flex; gap: 4px; overflow-x: auto; flex: 1 1 0; min-width: 80px; scrollbar-width: thin; }
+.tab { flex: none; }
 .tab { border-radius: 8px 8px 0 0; border-bottom: 2px solid transparent; background: transparent; padding: 5px 10px; }
 .tab.active { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
-.spacer { flex: 1; }
+.spacer { flex: 0; }
+.topbar { flex-wrap: nowrap; }
 .pill { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
 .pill.on { color: var(--ok); border-color: var(--ok); }
 .pill.busy { color: var(--warn); border-color: var(--warn); }
@@ -96,6 +98,7 @@ textarea { resize: vertical; font-family: ui-monospace, "Cascadia Mono", Consola
 .branch-label .cond { text-transform: none; letter-spacing: 0; font-weight: 500; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .branch-add { font-size: 11px; padding: 2px 8px; margin-top: 8px; }
 .loop-body { border-left: 3px solid var(--g-flow); padding-left: 14px; margin-top: 4px; }
+.empty-hint { font-size: 12px; color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; padding: 8px 14px; background: var(--panel); }
 
 /* inspector */
 .inspector h3 { margin: 0 0 4px; font-size: 15px; }
@@ -126,7 +129,8 @@ dialog::backdrop { background: rgba(10,15,30,.45); }
   .palette { max-height: 140px; border-right: 0; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px; }
   .palette h4 { width: 100%; margin: 6px 0 2px; }
   .inspector { border-left: 0; border-top: 1px solid var(--line); max-height: 40vh; }
-  .tabs { max-width: 100%; }
+  .topbar { flex-wrap: wrap; }
+  .tabs { flex-basis: 100%; order: 5; }
   .canvas { padding: 20px 12px 80px; }
   .block { padding: 0 6px 8px; }
 }
