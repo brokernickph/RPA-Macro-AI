@@ -1,0 +1,13 @@
+[project]
+name = "pmc-rpa-mcp"
+version = "0.1.0"
+description = "Pulover Macro Creator as an RPA tool for UiPath agents: build, run and record desktop macros over MCP"
+authors = [{ name = "RPA-Macro-AI contributors" }]
+requires-python = ">=3.10"
+# pmc_mcp itself is copied into this folder by prepare.py (UiPath's packer can't
+# express git/path dependencies), so only PyPI packages are listed here.
+dependencies = [
+    "uipath-mcp>=0.3",
+    "anyio>=4",
+    "pillow>=10; sys_platform == 'win32'",
+]

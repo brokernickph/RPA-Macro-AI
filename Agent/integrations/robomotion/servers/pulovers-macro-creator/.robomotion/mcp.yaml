@@ -1,0 +1,21 @@
+type: mcp
+name: pulovers-macro-creator
+title: Pulover's Macro Creator (desktop RPA)
+author: RPA-Macro-AI contributors
+version: 0.1.0
+license: GPL-3.0-or-later
+category: Productivity
+summary: Windows desktop automation through Pulover's Macro Creator. Build and edit
+  macros (.pmc), run them with input and output variables, play and record in the
+  PMC app, and observe or drive the desktop (screenshots, windows, mouse, keyboard,
+  image search). Runs as a stdio subprocess on the Windows host; no credential is
+  required.
+source_url: https://github.com/brokernickph/rpa-macro-ai
+tags: [rpa, desktop, windows, autohotkey, macro, recorder, automation, stdio]
+transport: stdio
+command: uvx
+args: ["--from", "git+https://github.com/brokernickph/rpa-macro-ai@feature/ai-agent-rpa-mcp#subdirectory=Agent", "pmc-mcp"]
+timeout: 600
+# Fully local: drives the desktop it runs on and reads/writes .pmc files in
+# PMC_MCP_ROOTS. It makes no outbound calls of its own.
+egress_hosts: []

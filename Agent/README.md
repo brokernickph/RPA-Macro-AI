@@ -48,6 +48,15 @@ pmc-board "C:\Users\me\Documents\PMC Macros\invoice.pmc"
 It listens on `127.0.0.1` only, and the link it opens carries a per-launch access token, so other
 web pages can't drive it. It exits on its own about two minutes after you close the tab.
 
+## Other RPA platforms
+
+| Platform | How PMC plugs in | Folder |
+|---|---|---|
+| **UiPath** | A coded MCP server for Orchestrator, built with UiPath's `uipath-mcp` SDK. `uipath init` and `uipath pack` were verified. | [`integrations/uipath`](integrations/uipath/README.md) |
+| **Robomotion** | An entry for the `robomotion-mcps` catalog, so Teams agents can switch PMC on. It passes the catalog's `validate.sh`. | [`integrations/robomotion`](integrations/robomotion/README.md) |
+| **Automation Anywhere** | Bots call `pmc-run` or the `run_json` Python function to run a macro with inputs and outputs. | [`integrations/automation-anywhere`](integrations/automation-anywhere/README.md) |
+| Anything else | `pmc-run file.pmc --input K=V --output X [--result-file r.json]` prints JSON. Exit codes: 0 completed, 2 incomplete, 3 timed out, 1 error. | – |
+
 ## Install (Windows)
 
 1. Python 3.10+ and, for the desktop tools, **AutoHotkey v1.1** (<https://www.autohotkey.com>).

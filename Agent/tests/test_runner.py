@@ -87,3 +87,45 @@ def test_missing_pmc_exe(tmp_path):
 
 def test_ahk_string():
     assert runner.ahk_string('say "hi"\n`x') == '"say ""hi""`n``x"'
+
+
+# ---- pmc-run CLI and run_json (used by Automation Anywhere and other platforms) ----
+
+def test_cli_success_and_result_file(cfg, tmp_path, monkeypatch, capsys):
+    import json as _json
+
+    from pmc_mcp import cli
+
+    monkeypatch.setenv("PMC_EXE", cfg.pmc)
+    monkeypatch.setenv("PMC_MCP_ROOTS", str(tmp_path / "unrelated-root"))  # file folder is allowed explicitly
+    p = make(cfg.roots[0], [steps.sleep(1)])
+    out = tmp_path / "result.json"
+    code = cli.main([str(p), "-i", "Name=Ada, 100%", "-o", "Name", "--result-file", str(out)])
+    printed = _json.loads(capsys.readouterr().out)
+    assert code == 0 and printed["ok"] and printed["outputs"] == {"Name": "Ada, 100%"}
+    assert _json.loads(out.read_text()) == printed
+
+
+def test_cli_exit_codes(cfg, tmp_path, monkeypatch, capsys):
+    from pmc_mcp import cli
+
+    monkeypatch.setenv("PMC_EXE", cfg.pmc)
+    p = make(cfg.roots[0], [steps.sleep(10_000)])
+    assert cli.main([str(p), "--timeout", "1"]) == cli.EXIT_TIMEOUT
+    assert cli.main([str(tmp_path / "missing.pmc")]) == cli.EXIT_ERROR
+    monkeypatch.setenv("PMC_MCP_LEVEL", "readonly")
+    assert cli.main([str(p)]) == cli.EXIT_ERROR
+    assert "standard" in capsys.readouterr().out
+
+
+def test_run_json(cfg, tmp_path, monkeypatch):
+    import json as _json
+
+    from pmc_mcp import cli
+
+    monkeypatch.setenv("PMC_EXE", cfg.pmc)
+    p = make(cfg.roots[0], [steps.sleep(1)], [steps.sleep(1)])
+    res = _json.loads(cli.run_json(_json.dumps({"path": str(p), "macro": "M2", "inputs": {"X": "1"}, "outputs": ["X"]})))
+    assert res["ok"] and res["macro"]["name"] == "M2" and res["outputs"] == {"X": "1"}
+    bad = _json.loads(cli.run_json("not json"))
+    assert bad["ok"] is False and "error" in bad

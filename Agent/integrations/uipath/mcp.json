@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "pmc-rpa": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "pmc_mcp"]
+    }
+  }
+}

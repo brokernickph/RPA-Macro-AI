@@ -21,6 +21,7 @@ test = ["pytest>=8", "playwright>=1.40"]
 [project.scripts]
 pmc-mcp = "pmc_mcp.server:main"
 pmc-board = "pmc_mcp.board_server:main"
+pmc-run = "pmc_mcp.cli:main"
 
 [tool.setuptools]
 packages = ["pmc_mcp"]

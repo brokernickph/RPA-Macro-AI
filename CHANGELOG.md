@@ -89,13 +89,31 @@ install the `Agent/` package.
 | ![Loops](Agent/docs/screenshots/04-loops.png) | ![Dark mode](Agent/docs/screenshots/05-dark-mode-branches.png) |
 | Repeat blocks and macro tabs (PMC's LoopTypes example) | If / Else if / Else in dark mode |
 
+**Other RPA platforms** (`Agent/integrations/`)
+
+- **UiPath:** packaging for publishing `pmc-mcp` to Orchestrator as a coded MCP server with
+  UiPath's MIT-licensed `uipath-mcp` SDK.
+  - `uipath init` and `uipath pack` were verified with uipath-mcp 0.3.2.
+  - The packed server was started from the `.nupkg` with only its declared dependencies and served
+    all 27 tools.
+  - `prepare.py` bundles `pmc_mcp`, because UiPath's packer mangles git dependencies.
+- **Robomotion:** a `robomotion-mcps` catalog entry (`.robomotion/mcp.yaml`, `MCP.md`,
+  `env.optional`). It passes the catalog's own `validate.sh` and `build-index.py`, and its
+  `uvx … pmc-mcp` launch command was tested.
+- **Automation Anywhere:** a step-by-step guide for running macros from AA bots through the
+  Python Script package (`run_json`) or Application › Open program (`pmc-run --result-file`).
+- **`pmc-run` CLI:** runs a macro headless from any tool and prints JSON. It supports
+  `--input`, `--output`, `--json`, `--timeout` and `--result-file`, with exit codes 0 completed,
+  2 incomplete, 3 timed out, 1 error.
+- **`pmc_mcp.cli.run_json`:** one JSON string in, one JSON string out, and it never raises.
+
 ### Changed
 
 - `README.md` now has a section on AI agents, RPA and the Visual Board.
 
 ### Tests
 
-116 automated tests (`cd Agent && pip install -e .[test] && pytest`), runnable on any OS:
+119 automated tests (`cd Agent && pip install -e .[test] && pytest`), runnable on any OS:
 
 - `.pmc` round trips and block-tree round trips for every bundled example.
 - Every step the board shows as a form rebuilds to the identical row.
@@ -113,6 +131,10 @@ install the `Agent/` package.
   keeps every board flow a valid PMC macro.
 - Image/pixel search and some less common commands have no form on the board yet; they show as
   raw PMC rows.
+- The UiPath, Robomotion and Automation Anywhere integrations were checked with each platform's
+  own tooling where it's public, but none has been run against a real tenant, hub or Control
+  Room. UiPath marks MCP-server packages as not needing a desktop session, so make sure
+  Orchestrator runs this one on a Windows robot with a logged-in desktop.
 - At the `standard` permission level an agent can effectively control the computer as the
   signed-in user, because macros can run any program. Use a separate Windows account or a VM for
   unattended automation.
